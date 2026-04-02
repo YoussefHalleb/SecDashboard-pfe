@@ -26,6 +26,13 @@ jobs:
       - name: Configure Docker for GCR
         run: gcloud auth configure-docker --quiet
 
+      - name: Create GCR Repository
+        run: |
+          gcloud artifacts repositories create gcr.io \
+            --repository-format=docker \
+            --location=us \
+            --project=$PROJECT_ID || true
+
       # ─── BACKEND ────────────────────────────────────────
       - name: Build & Push Backend
         run: |
