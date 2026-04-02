@@ -27,8 +27,12 @@ app.use(cookieParser());
 
 app.use(
   cors({
-    origin: process.env.CLIENT_ORIGIN, // ex: http://localhost:5173
-    credentials: true, // IMPORTANT pour envoyer/recevoir cookies
+    origin: [
+      "http://localhost:5173", // dev
+      "http://localhost", // docker
+      "http://localhost:80", // docker explicite
+    ],
+    credentials: true,
   }),
 );
 
@@ -92,10 +96,8 @@ app.post("/auth/register", async (req, res) => {
 
     res.json(user);
   } catch (err) {
-    // email unique -> erreur possible
-    return res
-      .status(400)
-      .json({ error: "User already exists or invalid data" });
+    console.error("REGISTER ERROR:", err.message);
+    return res.status(400).json({ error: err.message });
   }
 });
 
