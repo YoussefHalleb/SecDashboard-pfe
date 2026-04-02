@@ -1,0 +1,52 @@
+name: Build & Push to GCR
+
+on:
+  push:
+    branches: [main]
+
+env:
+  PROJECT_ID: secdashboard-pfe
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker --quiet
+
+      # ─── BACKEND ────────────────────────────────────────
+      - name: Build & Push Backend
+        run: |
+          docker build -t gcr.io/$PROJECT_ID/backend:${{ github.sha }} \
+                       -t gcr.io/$PROJECT_ID/backend:latest \
+                       ./backend
+          docker push gcr.io/$PROJECT_ID/backend:${{ github.sha }}
+          docker push gcr.io/$PROJECT_ID/backend:latest
+
+      # ─── FRONTEND ───────────────────────────────────────
+      - name: Build & Push Frontend
+        run: |
+          docker build -t gcr.io/$PROJECT_ID/frontend:${{ github.sha }} \
+                       -t gcr.io/$PROJECT_ID/frontend:latest \
+                       ./security-dashboard
+          docker push gcr.io/$PROJECT_ID/frontend:${{ github.sha }}
+          docker push gcr.io/$PROJECT_ID/frontend:latest
+
+      # ─── POSTGRES ───────────────────────────────────────
+      - name: Push Postgres image
+        run: |
+          docker pull postgres:15-alpine
+          docker tag postgres:15-alpine gcr.io/$PROJECT_ID/postgres:latest
+          docker push gcr.io/$PROJECT_ID/postgres:latest
