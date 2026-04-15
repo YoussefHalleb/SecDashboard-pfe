@@ -1,0 +1,5 @@
+k8s/
+terraform/
+key.json
+ingress-nginx-svc-backup.yaml
+security-dashboard/.env.production
