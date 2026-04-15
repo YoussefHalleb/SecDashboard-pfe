@@ -15,8 +15,11 @@ fs.mkdirSync(ZAP_DIR, { recursive: true });
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, ZAP_DIR),
   filename: (req, file, cb) => {
-    // garde le vrai nom "zap.html"
-    cb(null, file.originalname);
+    const repoName = (req.body?.repo_name || "unknown").replace(
+      /[^a-zA-Z0-9-_]/g,
+      "_",
+    );
+    cb(null, `${repoName}-zap.html`);
   },
 });
 
@@ -31,6 +34,7 @@ app.use(
       "http://localhost:5173", // dev
       "http://localhost", // docker
       "http://localhost:80", // docker explicite
+      process.env.CLIENT_ORIGIN,
     ],
     credentials: true,
   }),
@@ -89,7 +93,7 @@ app.post("/auth/register", async (req, res) => {
 
     res.cookie("token", token, {
       httpOnly: true,
-      sameSite: "lax",
+      sameSite: "none",
       secure: false, // mets true en HTTPS (prod)
       maxAge: 7 * 24 * 3600 * 1000,
     });
@@ -394,7 +398,36 @@ app.get("/api/products/:id/zap-findings", async (req, res) => {
     res.status(500).json({ error: "Failed to parse ZAP report" });
   }
 });
-
+app.delete("/api/products/:id", async (req, res) => {
+  const productId = req.params.id;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `DELETE FROM finding_recommendations WHERE finding_id IN (SELECT id FROM findings WHERE product_id = $1)`,
+      [productId],
+    );
+    await client.query(
+      `DELETE FROM finding_ai_analysis WHERE finding_id IN (SELECT id FROM findings WHERE product_id = $1)`,
+      [productId],
+    );
+    await client.query(
+      `DELETE FROM performance_results WHERE product_id = $1`,
+      [productId],
+    );
+    await client.query(`DELETE FROM findings WHERE product_id = $1`, [
+      productId,
+    ]);
+    await client.query(`DELETE FROM products WHERE id = $1`, [productId]);
+    await client.query("COMMIT");
+    res.json({ success: true });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    res.status(500).json({ error: "Delete failed", details: e.message });
+  } finally {
+    client.release();
+  }
+});
 app.post("/api/products/:id/ai-from-zap", async (req, res) => {
   try {
     const { rows } = await pool.query(
@@ -1204,7 +1237,7 @@ app.post(
 
       const productId = product.rows[0].id;
 
-      const normalizedPath = req.file.path.replace(/\\/g, "/");
+      const normalizedPath = `/app/uploads/zap/${req.body.repo_name.replace(/[^a-zA-Z0-9-_]/g, "_")}-zap.html`;
 
       await pool.query(
         `UPDATE products
@@ -1250,6 +1283,7 @@ app.get("/test-zap", (req, res) => {
 });
 
 // POST /api/performance/results  ← appelé par le pipeline
+// POST /api/performance/results  ← appelé par le pipeline
 app.post("/api/performance/results", async (req, res) => {
   try {
     const {
@@ -1268,7 +1302,6 @@ app.post("/api/performance/results", async (req, res) => {
       throughput,
     } = req.body;
 
-    // Trouver le product_id
     const product = await pool.query(
       `SELECT id FROM products WHERE name = $1`,
       [product_name],
@@ -1312,12 +1345,19 @@ app.post("/api/performance/results", async (req, res) => {
 // GET /api/performance/:productId  ← appelé par le dashboard
 app.get("/api/performance/:productId", async (req, res) => {
   try {
+    const productId = req.params.productId;
+
+    const prod = await pool.query(`SELECT name FROM products WHERE id = $1`, [
+      productId,
+    ]);
+    const productName = prod.rows[0]?.name;
+
     const { rows } = await pool.query(
       `SELECT * FROM performance_results
-       WHERE product_id = $1
+       WHERE product_id = $1 OR product_name = $2
        ORDER BY run_at DESC
        LIMIT 10`,
-      [req.params.productId],
+      [productId, productName || ""],
     );
     res.json(rows);
   } catch (e) {
