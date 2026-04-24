@@ -94,19 +94,30 @@ async function callGeminiWithGrounding(userPrompt) {
         ],
       },
     ],
-    systemInstruction: {
-      parts: [
-        {
-          text: `You are a senior Application Security Engineer.
-Use ONLY the provided OWASP documents to generate precise remediations.
-Always cite the OWASP cheat sheet used.
-Return ONLY valid JSON.`,
-        },
+   systemInstruction: {
+  parts: [
+    {
+      text: `You are a senior Application Security Engineer.
+Use the provided OWASP documents when relevant.
+If OWASP context is insufficient, use general secure coding best practices.
+
+Return ONLY valid JSON.
+Do not use markdown.
+Do not use triple backticks.
+All JSON strings must be closed.
+code_fix_example must be a single-line JSON string.
+code_fix_example must not contain raw line breaks.
+Escape all double quotes inside code_fix_example with \\\".
+Replace all newlines in code_fix_example with \\n.
+Never truncate the JSON.`,
+    },
+  ],
+},
       ],
     },
     generationConfig: {
       temperature: 0.2,
-      maxOutputTokens: 8192,
+      maxOutputTokens: 2048,
     },
   };
 
