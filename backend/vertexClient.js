@@ -55,7 +55,9 @@ async function callGeminiWithGrounding(userPrompt) {
   const tokenResponse = await authClient.getAccessToken();
   const token = tokenResponse.token;
 
-  const url = `https://us-central1-aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/us-central1/publishers/google/models/gemini-2.0-flash-001:generateContent`;
+  const MODEL_ID = process.env.VERTEX_MODEL_ID || "gemini-2.5-flash";
+
+const url = `https://aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/global/publishers/google/models/${MODEL_ID}:generateContent`;
 
   const body = {
     contents: [
