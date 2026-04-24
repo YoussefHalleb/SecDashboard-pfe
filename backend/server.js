@@ -9,7 +9,7 @@ const path = require("path");
 const fs = require("fs");
 const { callGeminiWithGrounding } = require("./vertexClient");
 const { parseZapHtmlFile } = require("./zapParser");
-function safeParseJSON(raw) {
+function safeParseJSON(raw) { 
   try {
     let cleaned = raw.replace(/```json|```/gi, "").trim();
 
