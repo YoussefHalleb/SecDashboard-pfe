@@ -10,6 +10,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@google-cloud/discoveryengine": "^2.6.0",
     "axios": "^1.13.5",
     "bcrypt": "^6.0.0",
     "cheerio": "^1.2.0",
