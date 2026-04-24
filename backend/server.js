@@ -20,15 +20,17 @@ function safeParseJSON(raw) {
     }
 
     cleaned = cleaned.replace(
-      /"code_fix_example":\s*"([\s\S]*?)"/g,
-      (_, code) => {
-        const safe = code
-          .replace(/\\/g, "\\\\")
-          .replace(/"/g, '\\"')
-          .replace(/\n/g, "\\n");
-        return `"code_fix_example": "${safe}"`;
-      }
-    );
+  /"code_fix_example":\s*"([\s\S]*?)"(?=\s*,|\s*})/g,
+  (_, code) => {
+    const safe = code
+      .replace(/\\/g, "\\\\")
+      .replace(/"/g, '\\"')
+      .replace(/\r?\n/g, "\\n")
+      .replace(/\t/g, "\\t");
+
+    return `"code_fix_example": "${safe}"`;
+  }
+);
 
     return JSON.parse(cleaned);
   } catch (e) {
