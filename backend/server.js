@@ -540,7 +540,7 @@ app.post("/api/ai/recommendations", async (req, res) => {
       return res.json({ items: [] });
     }
 
-    const MAX_ITEMS = 10;
+    const MAX_ITEMS = 5;
     const selected = vulnerabilities.slice(0, MAX_ITEMS);
     const findingIds = selected.map((v) => v.id);
 
@@ -793,7 +793,7 @@ app.post("/api/ai/analyze", async (req, res) => {
       return res.json({ items: [] });
     }
 
-    const MAX_ITEMS = 10;
+    const MAX_ITEMS = 5;
     const selected = vulnerabilities.slice(0, MAX_ITEMS);
     const findingIds = selected.map((v) => v.id);
 
