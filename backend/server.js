@@ -9,7 +9,7 @@ const path = require("path");
 const fs = require("fs");
 const { callGeminiWithGrounding } = require("./vertexClient");
 const { parseZapHtmlFile } = require("./zapParser");
-function safeParseJSON(raw) { 
+function safeParseJSON(raw) {
   try {
     let cleaned = raw.replace(/```json|```/gi, "").trim();
 
@@ -22,7 +22,11 @@ function safeParseJSON(raw) {
 
     cleaned = cleaned.slice(first, last + 1);
 
-
+    // 🔥 FIX : supprimer code cassé
+    cleaned = cleaned.replace(
+      /"code_fix_example":\s*"[^"]*$/g,
+      `"code_fix_example": ""`
+    );
 
     return JSON.parse(cleaned);
   } catch (e) {
@@ -682,20 +686,14 @@ Rules:
 - priority: based on cvss_score + context
 - be concise, practical, and specific to the actual finding data
 
-- code_fix_example: return secure code as a SINGLE-LINE string only
-- code_fix_example: escape all quotes with \"
-- code_fix_example: replace all new lines with \n
-- code_fix_example: do not use markdown code blocks
-- code_fix_example: do not use triple backticks
-- Return valid JSON only
-- code_fix_example: DO NOT return prose, comments, bullet points, or remediation text
-- code_fix_example: return a real code snippet adapted to the likely stack
-- code_fix_example: if the stack looks like Node.js/Express, return Express code
-- code_fix_example: if the issue is web-server/header related, return exact Nginx or Apache config when more appropriate
-- code_fix_example: do not give pseudo-code
-- code_fix_example: prefer production-ready secure defaults
-- code_fix_example: if no exact stack is known, return the most likely practical code fix
-- code_fix_example: the snippet must start directly with code
+- code_fix_example: return ONE short secure fix command/config line only
+- code_fix_example: maximum 180 characters
+- code_fix_example: no raw newlines
+- code_fix_example: no markdown
+- code_fix_example: escape quotes
+- NEVER generate long code
+- NEVER break JSON
+- ALWAYS close strings
 
 Product: ${product}
 
