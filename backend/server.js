@@ -9,6 +9,34 @@ const path = require("path");
 const fs = require("fs");
 const { callGeminiWithGrounding } = require("./vertexClient");
 const { parseZapHtmlFile } = require("./zapParser");
+function safeParseJSON(raw) {
+  try {
+    let cleaned = raw.replace(/```json|```/gi, "").trim();
+
+    const first = cleaned.indexOf("{");
+    const last = cleaned.lastIndexOf("}");
+    if (first !== -1 && last !== -1) {
+      cleaned = cleaned.slice(first, last + 1);
+    }
+
+    cleaned = cleaned.replace(
+      /"code_fix_example":\s*"([\s\S]*?)"/g,
+      (_, code) => {
+        const safe = code
+          .replace(/\\/g, "\\\\")
+          .replace(/"/g, '\\"')
+          .replace(/\n/g, "\\n");
+        return `"code_fix_example": "${safe}"`;
+      }
+    );
+
+    return JSON.parse(cleaned);
+  } catch (e) {
+    console.error("❌ JSON PARSE FAILED");
+    console.error(raw);
+    return null;
+  }
+}
 const ZAP_DIR = path.join(__dirname, "uploads", "zap");
 
 fs.mkdirSync(ZAP_DIR, { recursive: true });
@@ -491,56 +519,8 @@ ${JSON.stringify(selected, null, 2)}
 
     const { raw } = await callGeminiWithGrounding(prompt);
 
-    let cleaned = raw.replace(/```json|```/gi, "").trim();
-
-    // garder uniquement le JSON entre le premier { et le dernier }
-    const firstBrace = cleaned.indexOf("{");
-    const lastBrace = cleaned.lastIndexOf("}");
-    if (firstBrace !== -1 && lastBrace !== -1) {
-      cleaned = cleaned.slice(firstBrace, lastBrace + 1);
-    }
-
-    // transformer seulement les valeurs entre backticks en vraies strings JSON
-    cleaned = cleaned.replace(/:\s*`([\s\S]*?)`(?=\s*[,}])/g, (_, content) => {
-      const escaped = content
-        .replace(/\\/g, "\\\\")
-        .replace(/"/g, '\\"')
-        .replace(/\r?\n/g, "\\n")
-        .replace(/\t/g, "\\t");
-      return `: "${escaped}"`;
-    });
-    function safeParseJSON(raw) {
-  try {
-    let cleaned = raw.replace(/```json|```/gi, "").trim();
-
-    const first = cleaned.indexOf("{");
-    const last = cleaned.lastIndexOf("}");
-    if (first !== -1 && last !== -1) {
-      cleaned = cleaned.slice(first, last + 1);
-    }
-
-    // 🔥 FIX code cassé (LE BUG CHEZ TOI)
-    cleaned = cleaned.replace(
-      /"code_fix_example":\s*"([\s\S]*?)"/g,
-      (_, code) => {
-        const safe = code
-          .replace(/\\/g, "\\\\")
-          .replace(/"/g, '\\"')
-          .replace(/\n/g, "\\n");
-        return `"code_fix_example": "${safe}"`;
-      }
-    );
-
-    return JSON.parse(cleaned);
-  } catch (e) {
-    console.error("❌ JSON PARSE FAILED");
-    console.error(raw);
-    return null;
-  }
-}
-
-// 👉 UTILISATION
-const parsed = safeParseJSON(raw);
+   
+   const parsed = safeParseJSON(raw);
 
 if (!parsed) {
   throw new Error("Invalid JSON from AI");
@@ -726,57 +706,9 @@ ${JSON.stringify(summary, null, 2)}
 
    const { raw } = await callGeminiWithGrounding(prompt);
 
-    let cleaned = raw.replace(/```json|```/gi, "").trim();
+   
 
-    // garder uniquement le JSON entre le premier { et le dernier }
-    const firstBrace = cleaned.indexOf("{");
-    const lastBrace = cleaned.lastIndexOf("}");
-    if (firstBrace !== -1 && lastBrace !== -1) {
-      cleaned = cleaned.slice(firstBrace, lastBrace + 1);
-    }
-
-    // transformer seulement les valeurs entre backticks en vraies strings JSON
-    cleaned = cleaned.replace(/:\s*`([\s\S]*?)`(?=\s*[,}])/g, (_, content) => {
-      const escaped = content
-        .replace(/\\/g, "\\\\")
-        .replace(/"/g, '\\"')
-        .replace(/\r?\n/g, "\\n")
-        .replace(/\t/g, "\\t");
-      return `: "${escaped}"`;
-    });
-
-    function safeParseJSON(raw) {
-  try {
-    let cleaned = raw.replace(/```json|```/gi, "").trim();
-
-    const first = cleaned.indexOf("{");
-    const last = cleaned.lastIndexOf("}");
-    if (first !== -1 && last !== -1) {
-      cleaned = cleaned.slice(first, last + 1);
-    }
-
-    // 🔥 FIX code cassé (LE BUG CHEZ TOI)
-    cleaned = cleaned.replace(
-      /"code_fix_example":\s*"([\s\S]*?)"/g,
-      (_, code) => {
-        const safe = code
-          .replace(/\\/g, "\\\\")
-          .replace(/"/g, '\\"')
-          .replace(/\n/g, "\\n");
-        return `"code_fix_example": "${safe}"`;
-      }
-    );
-
-    return JSON.parse(cleaned);
-  } catch (e) {
-    console.error("❌ JSON PARSE FAILED");
-    console.error(raw);
-    return null;
-  }
-}
-
-// 👉 UTILISATION
-const parsed = safeParseJSON(raw);
+    const parsed = safeParseJSON(raw);
 
 if (!parsed) {
   throw new Error("Invalid JSON from AI");
@@ -937,56 +869,8 @@ ${JSON.stringify(summary, null, 2)}
 
     const { raw } = await callGeminiWithGrounding(prompt);
 
-    let cleaned = raw.replace(/```json|```/gi, "").trim();
-
-    // garder uniquement le JSON entre le premier { et le dernier }
-    const firstBrace = cleaned.indexOf("{");
-    const lastBrace = cleaned.lastIndexOf("}");
-    if (firstBrace !== -1 && lastBrace !== -1) {
-      cleaned = cleaned.slice(firstBrace, lastBrace + 1);
-    }
-
-    // transformer seulement les valeurs entre backticks en vraies strings JSON
-    cleaned = cleaned.replace(/:\s*`([\s\S]*?)`(?=\s*[,}])/g, (_, content) => {
-      const escaped = content
-        .replace(/\\/g, "\\\\")
-        .replace(/"/g, '\\"')
-        .replace(/\r?\n/g, "\\n")
-        .replace(/\t/g, "\\t");
-      return `: "${escaped}"`;
-    });
-    function safeParseJSON(raw) {
-  try {
-    let cleaned = raw.replace(/```json|```/gi, "").trim();
-
-    const first = cleaned.indexOf("{");
-    const last = cleaned.lastIndexOf("}");
-    if (first !== -1 && last !== -1) {
-      cleaned = cleaned.slice(first, last + 1);
-    }
-
-    // 🔥 FIX code cassé (LE BUG CHEZ TOI)
-    cleaned = cleaned.replace(
-      /"code_fix_example":\s*"([\s\S]*?)"/g,
-      (_, code) => {
-        const safe = code
-          .replace(/\\/g, "\\\\")
-          .replace(/"/g, '\\"')
-          .replace(/\n/g, "\\n");
-        return `"code_fix_example": "${safe}"`;
-      }
-    );
-
-    return JSON.parse(cleaned);
-  } catch (e) {
-    console.error("❌ JSON PARSE FAILED");
-    console.error(raw);
-    return null;
-  }
-}
-
-// 👉 UTILISATION
-const parsed = safeParseJSON(raw);
+    
+  const parsed = safeParseJSON(raw);
 
 if (!parsed) {
   throw new Error("Invalid JSON from AI");
