@@ -9,7 +9,6 @@ const ENGINE_ID = process.env.VERTEX_ENGINE_ID;
 
 const searchClient = new SearchServiceClient();
 
-// 🔥 NORMALISATION INTELLIGENTE
 function normalizeQuery(text) {
   const t = text.toLowerCase();
 
@@ -23,7 +22,6 @@ function normalizeQuery(text) {
   return text + " owasp security fix";
 }
 
-// 🔍 SEARCH
 async function searchOWASPDocs(query) {
   const servingConfig =
     searchClient.projectLocationCollectionEngineServingConfigPath(
@@ -38,20 +36,18 @@ async function searchOWASPDocs(query) {
     servingConfig,
     query,
     pageSize: 5,
-    autoPaginate: false, // ✅ FIX WARNING
+    autoPaginate: false,
   });
 
   return results || [];
 }
 
-// 🤖 GEMINI + RAG
 async function callGeminiWithGrounding(userPrompt) {
   const searchQuery = normalizeQuery(userPrompt);
   console.log("🔍 SEARCH QUERY:", searchQuery);
 
   let searchResults = await searchOWASPDocs(searchQuery);
 
-  // 🔥 FALLBACK SI 0 RÉSULTAT
   if (!searchResults.length) {
     console.log("⚠️ Aucun résultat → fallback query");
     searchResults = await searchOWASPDocs("owasp top 10 web vulnerabilities");
@@ -71,7 +67,6 @@ async function callGeminiWithGrounding(userPrompt) {
 
   console.log(`✅ ${searchResults.length} docs OWASP trouvés`);
 
-  // 🔑 AUTH
   const auth = new GoogleAuth({
     scopes: ["https://www.googleapis.com/auth/cloud-platform"],
   });
@@ -94,10 +89,10 @@ async function callGeminiWithGrounding(userPrompt) {
         ],
       },
     ],
-   systemInstruction: {
-  parts: [
-    {
-      text: `You are a senior Application Security Engineer.
+    systemInstruction: {
+      parts: [
+        {
+          text: `You are a senior Application Security Engineer.
 Use the provided OWASP documents when relevant.
 If OWASP context is insufficient, use general secure coding best practices.
 
@@ -110,9 +105,7 @@ code_fix_example must not contain raw line breaks.
 Escape all double quotes inside code_fix_example with \\\".
 Replace all newlines in code_fix_example with \\n.
 Never truncate the JSON.`,
-    },
-  ],
-},
+        },
       ],
     },
     generationConfig: {
