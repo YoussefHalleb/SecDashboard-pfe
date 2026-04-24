@@ -15,28 +15,20 @@ function safeParseJSON(raw) {
 
     const first = cleaned.indexOf("{");
     const last = cleaned.lastIndexOf("}");
-    if (first !== -1 && last !== -1) {
-      cleaned = cleaned.slice(first, last + 1);
+
+    if (first === -1 || last === -1) {
+      throw new Error("No valid JSON found");
     }
 
-    cleaned = cleaned.replace(
-  /"code_fix_example":\s*"([\s\S]*?)"(?=\s*,|\s*})/g,
-  (_, code) => {
-    const safe = code
-      .replace(/\\/g, "\\\\")
-      .replace(/"/g, '\\"')
-      .replace(/\r?\n/g, "\\n")
-      .replace(/\t/g, "\\t");
+    cleaned = cleaned.slice(first, last + 1);
 
-    return `"code_fix_example": "${safe}"`;
-  }
-);
+
 
     return JSON.parse(cleaned);
   } catch (e) {
     console.error("❌ JSON PARSE FAILED");
     console.error(raw);
-    return null;
+    return { items: [] };
   }
 }
 const ZAP_DIR = path.join(__dirname, "uploads", "zap");
@@ -690,7 +682,12 @@ Rules:
 - priority: based on cvss_score + context
 - be concise, practical, and specific to the actual finding data
 
-- code_fix_example: MUST contain only executable secure code, not explanation
+- code_fix_example: return secure code as a SINGLE-LINE string only
+- code_fix_example: escape all quotes with \"
+- code_fix_example: replace all new lines with \n
+- code_fix_example: do not use markdown code blocks
+- code_fix_example: do not use triple backticks
+- Return valid JSON only
 - code_fix_example: DO NOT return prose, comments, bullet points, or remediation text
 - code_fix_example: return a real code snippet adapted to the likely stack
 - code_fix_example: if the stack looks like Node.js/Express, return Express code
