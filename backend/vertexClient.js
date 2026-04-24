@@ -5,10 +5,25 @@ const axios = require("axios");
 
 const PROJECT_ID = process.env.GCP_PROJECT_ID;
 const LOCATION = process.env.VERTEX_LOCATION || "global";
-const ENGINE_ID = process.env.VERTEX_ENGINE_ID; 
+const ENGINE_ID = process.env.VERTEX_ENGINE_ID;
 
 const searchClient = new SearchServiceClient();
 
+// 🔥 NORMALISATION INTELLIGENTE
+function normalizeQuery(text) {
+  const t = text.toLowerCase();
+
+  if (t.includes("clickjacking")) return "owasp clickjacking prevention";
+  if (t.includes("content security policy") || t.includes("csp"))
+    return "owasp content security policy xss prevention";
+  if (t.includes("xss")) return "owasp cross site scripting prevention";
+  if (t.includes("csrf")) return "owasp csrf prevention";
+  if (t.includes("sql")) return "owasp sql injection prevention";
+
+  return text + " owasp security fix";
+}
+
+// 🔍 SEARCH
 async function searchOWASPDocs(query) {
   const servingConfig =
     searchClient.projectLocationCollectionEngineServingConfigPath(
@@ -16,23 +31,32 @@ async function searchOWASPDocs(query) {
       LOCATION,
       "default_collection",
       ENGINE_ID,
-      "default_search",
+      "default_search"
     );
 
   const [results] = await searchClient.search({
     servingConfig,
     query,
     pageSize: 5,
+    autoPaginate: false, // ✅ FIX WARNING
   });
 
   return results || [];
 }
 
+// 🤖 GEMINI + RAG
 async function callGeminiWithGrounding(userPrompt) {
-  // 1) Chercher les docs OWASP pertinents
-  const searchResults = await searchOWASPDocs(userPrompt.slice(0, 300));
+  const searchQuery = normalizeQuery(userPrompt);
+  console.log("🔍 SEARCH QUERY:", searchQuery);
 
-  // 2) Extraire le texte avec la bonne structure
+  let searchResults = await searchOWASPDocs(searchQuery);
+
+  // 🔥 FALLBACK SI 0 RÉSULTAT
+  if (!searchResults.length) {
+    console.log("⚠️ Aucun résultat → fallback query");
+    searchResults = await searchOWASPDocs("owasp top 10 web vulnerabilities");
+  }
+
   const context = searchResults
     .map((r) => {
       const title =
@@ -45,19 +69,19 @@ async function callGeminiWithGrounding(userPrompt) {
     .filter((s) => s.length > 10)
     .join("\n\n");
 
-  console.log(`✅ ${searchResults.length} docs OWASP trouvés pour le contexte`);
+  console.log(`✅ ${searchResults.length} docs OWASP trouvés`);
 
-  // 3) Envoyer à Gemini avec le contexte OWASP
+  // 🔑 AUTH
   const auth = new GoogleAuth({
     scopes: ["https://www.googleapis.com/auth/cloud-platform"],
   });
+
   const authClient = await auth.getClient();
-  const tokenResponse = await authClient.getAccessToken();
-  const token = tokenResponse.token;
+  const token = (await authClient.getAccessToken()).token;
 
   const MODEL_ID = process.env.VERTEX_MODEL_ID || "gemini-2.5-flash";
 
-const url = `https://aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/global/publishers/google/models/${MODEL_ID}:generateContent`;
+  const url = `https://aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/global/publishers/google/models/${MODEL_ID}:generateContent`;
 
   const body = {
     contents: [
@@ -75,8 +99,8 @@ const url = `https://aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locatio
         {
           text: `You are a senior Application Security Engineer.
 Use ONLY the provided OWASP documents to generate precise remediations.
-Always cite the specific OWASP cheatsheet in your remediation field.
-Return ONLY valid JSON, no markdown fences, no explanation outside JSON.`,
+Always cite the OWASP cheat sheet used.
+Return ONLY valid JSON.`,
         },
       ],
     },
