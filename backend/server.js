@@ -509,14 +509,42 @@ ${JSON.stringify(selected, null, 2)}
         .replace(/\t/g, "\\t");
       return `: "${escaped}"`;
     });
-    let parsed;
-    try {
-      parsed = JSON.parse(cleaned);
-    } catch (err) {
-      console.error("AI RAW RESPONSE:", raw);
-      console.error("AI CLEANED RESPONSE:", cleaned);
-      throw new Error("Invalid JSON from AI");
+    function safeParseJSON(raw) {
+  try {
+    let cleaned = raw.replace(/```json|```/gi, "").trim();
+
+    const first = cleaned.indexOf("{");
+    const last = cleaned.lastIndexOf("}");
+    if (first !== -1 && last !== -1) {
+      cleaned = cleaned.slice(first, last + 1);
     }
+
+    // 🔥 FIX code cassé (LE BUG CHEZ TOI)
+    cleaned = cleaned.replace(
+      /"code_fix_example":\s*"([\s\S]*?)"/g,
+      (_, code) => {
+        const safe = code
+          .replace(/\\/g, "\\\\")
+          .replace(/"/g, '\\"')
+          .replace(/\n/g, "\\n");
+        return `"code_fix_example": "${safe}"`;
+      }
+    );
+
+    return JSON.parse(cleaned);
+  } catch (e) {
+    console.error("❌ JSON PARSE FAILED");
+    console.error(raw);
+    return null;
+  }
+}
+
+// 👉 UTILISATION
+const parsed = safeParseJSON(raw);
+
+if (!parsed) {
+  throw new Error("Invalid JSON from AI");
+}
 
     return res.json({
       parsed_findings_count: findings.length,
@@ -717,14 +745,42 @@ ${JSON.stringify(summary, null, 2)}
       return `: "${escaped}"`;
     });
 
-    let parsed;
-    try {
-      parsed = JSON.parse(cleaned);
-    } catch (err) {
-      console.error("AI RAW RESPONSE:", raw);
-      console.error("AI CLEANED RESPONSE:", cleaned);
-      throw new Error("Invalid JSON from AI");
+    function safeParseJSON(raw) {
+  try {
+    let cleaned = raw.replace(/```json|```/gi, "").trim();
+
+    const first = cleaned.indexOf("{");
+    const last = cleaned.lastIndexOf("}");
+    if (first !== -1 && last !== -1) {
+      cleaned = cleaned.slice(first, last + 1);
     }
+
+    // 🔥 FIX code cassé (LE BUG CHEZ TOI)
+    cleaned = cleaned.replace(
+      /"code_fix_example":\s*"([\s\S]*?)"/g,
+      (_, code) => {
+        const safe = code
+          .replace(/\\/g, "\\\\")
+          .replace(/"/g, '\\"')
+          .replace(/\n/g, "\\n");
+        return `"code_fix_example": "${safe}"`;
+      }
+    );
+
+    return JSON.parse(cleaned);
+  } catch (e) {
+    console.error("❌ JSON PARSE FAILED");
+    console.error(raw);
+    return null;
+  }
+}
+
+// 👉 UTILISATION
+const parsed = safeParseJSON(raw);
+
+if (!parsed) {
+  throw new Error("Invalid JSON from AI");
+}
 
     const items = Array.isArray(parsed.items) ? parsed.items : [];
     const saved = [];
@@ -899,14 +955,42 @@ ${JSON.stringify(summary, null, 2)}
         .replace(/\t/g, "\\t");
       return `: "${escaped}"`;
     });
-    let parsed;
-    try {
-      parsed = JSON.parse(cleaned);
-    } catch (err) {
-      console.error("AI RAW RESPONSE:", raw);
-      console.error("AI CLEANED RESPONSE:", cleaned);
-      throw new Error("Invalid JSON from AI");
+    function safeParseJSON(raw) {
+  try {
+    let cleaned = raw.replace(/```json|```/gi, "").trim();
+
+    const first = cleaned.indexOf("{");
+    const last = cleaned.lastIndexOf("}");
+    if (first !== -1 && last !== -1) {
+      cleaned = cleaned.slice(first, last + 1);
     }
+
+    // 🔥 FIX code cassé (LE BUG CHEZ TOI)
+    cleaned = cleaned.replace(
+      /"code_fix_example":\s*"([\s\S]*?)"/g,
+      (_, code) => {
+        const safe = code
+          .replace(/\\/g, "\\\\")
+          .replace(/"/g, '\\"')
+          .replace(/\n/g, "\\n");
+        return `"code_fix_example": "${safe}"`;
+      }
+    );
+
+    return JSON.parse(cleaned);
+  } catch (e) {
+    console.error("❌ JSON PARSE FAILED");
+    console.error(raw);
+    return null;
+  }
+}
+
+// 👉 UTILISATION
+const parsed = safeParseJSON(raw);
+
+if (!parsed) {
+  throw new Error("Invalid JSON from AI");
+}
 
     const items = Array.isArray(parsed.items) ? parsed.items : [];
 
