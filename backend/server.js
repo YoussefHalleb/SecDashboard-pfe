@@ -832,24 +832,22 @@ Return ONLY valid JSON in this exact format:
 
 {
   "items": [
-    {
-      "finding_id": number,
-      "title": string,
-      "owasp_category": string,
-      "cvss_score": number,
-      "cvss_vector": string,
-      "exploit_scenario": string,
-      "impact": string,
-      "remediation": string,
-      "code_fix_example": string,
-      "priority": "Critical|High|Medium|Low",
-      "ai_risk_score": number,
-      "confidence": number,
-      "false_positive_likelihood": "Low|Medium|High",
-      "attack_complexity": "Low|High",
-      "privileges_required": "None|Low|High",
-      "user_interaction": "None|Required"
-    }
+   {
+  "finding_id": number,
+  "title": string,
+  "owasp_category": string,
+  "risk_analysis": string,
+  "exploit_explanation": string,
+  "impact": string,
+  "remediation": string,
+  "secure_code_example": string,
+  "owasp_reference": string,
+  "attack_complexity": "Low|High",
+  "exploitability": "Low|Medium|High",
+  "business_risk": "Low|Medium|High",
+  "recommended_priority": "Critical|High|Medium|Low",
+  "risk_score": number
+}
   ]
 }
 
@@ -858,7 +856,10 @@ Rules:
 - code_fix_example: provide REAL secure code example (Node.js, Java, or generic depending on context)
 - include headers, middleware or config if needed
 - be concise and practical
-
+- exploitability: High|Medium|Low based on real attack feasibility
+- business_risk: High|Medium|Low based on business impact and exposed endpoint
+- risk_score: 0-100 based on CVSS, exploitability, business risk and evidence
+- recommended_priority must match risk_score
 Product: ${product}
 
 Findings JSON:
@@ -969,15 +970,12 @@ app.get("/api/findings/:id/ai-analysis", async (req, res) => {
   }
 });
 
-app.get(
-  "/api/repositories/:id/prioritized-findings",
+app.get("/api/repositories/:id/prioritized-findings", async (req, res) => {
+  try {
+    const productId = req.params.id;
 
-  async (req, res) => {
-    try {
-      const productId = req.params.id;
-
-      const { rows } = await pool.query(
-        `SELECT
+    const { rows } = await pool.query(
+      `SELECT
          f.*,
          a.risk_analysis,
          a.exploit_explanation,
@@ -989,49 +987,78 @@ app.get(
          a.exploitability,
          a.business_risk,
          a.recommended_priority,
-         a.risk_score
+         a.risk_score,
+         r.cvss_score,
+         r.ai_risk_score,
+         r.confidence,
+         r.false_positive_likelihood,
+         r.priority,
+         r.code_fix_example
        FROM findings f
        LEFT JOIN finding_ai_analysis a ON a.finding_id = f.id
-       WHERE f.product_id = $1
-       ORDER BY a.risk_score DESC NULLS LAST, f.created_at DESC`,
-        [productId],
-      );
+       LEFT JOIN finding_recommendations r ON r.finding_id = f.id AND r.status = 'proposed'
+       WHERE f.product_id = $1`,
+      [productId]
+    );
 
-      res.json(rows);
-    } catch (error) {
-      console.error(error.message);
-      res.status(500).json({ error: "Failed to fetch prioritized findings" });
-    }
-  },
-);
-function computePriorityScore(finding, ai) {
+    const prioritized = rows.map((f) => {
+      const priority_score = computePriorityScore(f, {
+        cvss_score: f.cvss_score,
+        exploitability: f.exploitability || f.attack_complexity,
+        business_risk: f.business_risk,
+      });
+
+      return {
+        ...f,
+        priority_score,
+        priority_label: priorityLabel(priority_score),
+      };
+    });
+
+    prioritized.sort((a, b) => b.priority_score - a.priority_score);
+
+    res.json(prioritized);
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).json({ error: "Failed to fetch prioritized findings" });
+  }
+});
+function computePriorityScore(finding, ai = {}) {
   let score = 0;
 
-  const severityMap = {
-    Critical: 40,
-    High: 30,
-    Medium: 20,
-    Low: 10,
-    Informational: 0,
-  };
+  const cvss = Number(ai.cvss_score || finding.cvss_score || 0);
+  score += (cvss / 10) * 40;
 
-  const levelMap = {
-    High: 20,
-    Medium: 10,
-    Low: 5,
-  };
+  const exploitMap = { High: 20, Medium: 10, Low: 5 };
+  score += exploitMap[ai.exploitability] || 0;
 
-  score += severityMap[finding.severity] || 0;
-  score += levelMap[ai.exploitability] || 0;
-  score += levelMap[ai.business_risk] || 0;
+  const businessMap = { High: 20, Medium: 10, Low: 5 };
+  score += businessMap[ai.business_risk] || 0;
 
-  if ((finding.url || "").includes("/admin")) score += 10;
-  if ((finding.url || "").includes("/login")) score += 10;
-  if ((finding.title || "").toLowerCase().includes("injection")) score += 10;
-  if ((finding.title || "").toLowerCase().includes("broken access"))
+  if (finding.evidence) score += 10;
+  else if (finding.attack) score += 7;
+  else if (finding.description) score += 3;
+
+  const url = (finding.url || "").toLowerCase();
+  if (url.includes("admin") || url.includes("login") || url.includes("payment")) {
     score += 10;
+  } else if (url.includes("api")) {
+    score += 5;
+  }
 
-  return Math.min(score, 100);
+  const title = (finding.title || "").toLowerCase();
+  if (title.includes("injection")) score += 10;
+  if (title.includes("broken access") || title.includes("bypassing 403")) score += 10;
+  if (title.includes("xss")) score += 8;
+
+  return Math.min(Math.round(score), 100);
+}
+
+function priorityLabel(score) {
+  if (score >= 85) return "Critical";
+  if (score >= 70) return "High";
+  if (score >= 40) return "Medium";
+  return "Low";
 }
 
 app.post(
