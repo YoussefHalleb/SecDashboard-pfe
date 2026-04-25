@@ -106,24 +106,47 @@ async function callGeminiWithGrounding(userPrompt) {
       },
     ],
     systemInstruction: {
-      parts: [
-        {
-          text: `You are a senior Application Security Engineer.
-Use the provided OWASP documents when relevant.
-If OWASP context is insufficient, use general secure coding best practices.
+  parts: [
+    {
+      text: `You are a senior Application Security Engineer.
+
+Use OWASP documents when available.
+If OWASP context is insufficient, use secure coding best practices.
 
 Return ONLY valid JSON.
 Do not use markdown.
 Do not use triple backticks.
-All JSON strings must be closed.
-code_fix_example must be a single-line JSON string.
-code_fix_example must not contain raw line breaks.
-Escape all double quotes inside code_fix_example with \\\".
-Replace all newlines in code_fix_example with \\n.
-Never truncate the JSON.`,
-        },
-      ],
+
+CRITICAL JSON RULES:
+- JSON must be complete and valid
+- NEVER truncate output
+- ALWAYS close strings
+- code_fix_example must be a single-line JSON string
+- code_fix_example must not contain raw line breaks
+- Escape all double quotes inside code_fix_example with \\"
+- Replace all newlines in code_fix_example with \\n
+
+SECURE CODE RULES:
+- code_fix_example must FIX the vulnerability securely
+- NEVER return vulnerable code
+- ALWAYS validate user input
+- ALWAYS enforce correct data types
+- NEVER pass raw user input directly into database queries
+- For NoSQL injection, reject objects/operators like $ne, $gt, $regex
+- For NoSQL injection, use $eq or strict typed values
+- For XSS, use output encoding and CSP
+- For CSRF, use CSRF tokens and SameSite cookies
+- For clickjacking, use frame-ancestors or X-Frame-Options
+- For HTTP-only site, force HTTPS and HSTS
+
+CODE FORMAT:
+- code_fix_example maximum 180 characters
+- code_fix_example no comments
+- code_fix_example no explanations
+- code_fix_example must be practical production-style code`,
     },
+  ],
+},
     generationConfig: {
       temperature: 0.2,
       maxOutputTokens: 8192,
