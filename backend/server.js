@@ -61,6 +61,7 @@ app.use(
       "http://localhost:5173", // dev
       "http://localhost", // docker
       "http://localhost:80", // docker explicite
+      "https://35.195.231.227.nip.io",
       process.env.CLIENT_ORIGIN,
     ],
     credentials: true,
@@ -118,12 +119,12 @@ app.post("/auth/register", async (req, res) => {
     const user = result.rows[0];
     const token = signToken(user);
 
-    res.cookie("token", token, {
-      httpOnly: true,
-      sameSite: "none",
-      secure: false, // mets true en HTTPS (prod)
-      maxAge: 7 * 24 * 3600 * 1000,
-    });
+   res.cookie("token", token, {
+  httpOnly: true,
+  sameSite: "lax",   // ✅ cohérent
+  secure: true,      // ✅ tu es en HTTPS avec cert-manager
+  maxAge: 7 * 24 * 3600 * 1000,
+});
 
     res.json(user);
   } catch (err) {
@@ -155,12 +156,12 @@ app.post("/auth/login", async (req, res) => {
 
     const token = signToken(user);
 
-    res.cookie("token", token, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: false,
-      maxAge: 7 * 24 * 3600 * 1000,
-    });
+   res.cookie("token", token, {
+  httpOnly: true,
+  sameSite: "lax",   // ✅ cohérent
+  secure: true,      // ✅ tu es en HTTPS avec cert-manager
+  maxAge: 7 * 24 * 3600 * 1000,
+});
 
     res.json({ id: user.id, email: user.email });
   } catch (err) {
@@ -1271,6 +1272,6 @@ app.get("/api/performance/:productId", async (req, res) => {
 ///////////////////////////////////////////////////////
 // START SERVER
 ///////////////////////////////////////////////////////
-app.listen(5000, () => {
-  console.log("🚀 Backend running on http://localhost:5000");
+app.listen(5000, "0.0.0.0", () => {
+  console.log("🚀 Backend running on http://0.0.0.0:5000");
 });
