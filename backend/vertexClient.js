@@ -116,7 +116,10 @@ If OWASP context is insufficient, use secure coding best practices.
 Return ONLY valid JSON.
 Do not use markdown.
 Do not use triple backticks.
-
+- exploit_scenario must be complete and detailed (2-3 sentences)
+- remediation must always be present and complete
+- do not cut sentences
+- ensure all fields are filled
 CRITICAL JSON RULES:
 - JSON must be complete and valid
 - NEVER truncate output
@@ -136,7 +139,7 @@ SECURE CODE RULES:
 - For NoSQL injection, use $eq or strict typed values
 - For XSS, use output encoding and CSP
 - For CSRF, use CSRF tokens and SameSite cookies
-- For clickjacking, use frame-ancestors or X-Frame-Options
+- For clickjacking, ALWAYS include both X-Frame-Options and Content-Security-Policy frame-ancestors
 - For HTTP-only site, force HTTPS and HSTS
 
 CODE FORMAT:
