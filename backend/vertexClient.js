@@ -12,14 +12,19 @@ const searchClient = new SearchServiceClient();
 function normalizeQuery(text) {
   const t = text.toLowerCase();
 
-  if (t.includes("clickjacking")) return "owasp clickjacking prevention";
-  if (t.includes("content security policy") || t.includes("csp"))
-    return "owasp content security policy xss prevention";
-  if (t.includes("xss")) return "owasp cross site scripting prevention";
-  if (t.includes("csrf")) return "owasp csrf prevention";
-  if (t.includes("sql")) return "owasp sql injection prevention";
+  if (t.includes("clickjacking"))
+    return "OWASP Clickjacking Prevention Cheat Sheet frame-ancestors X-Frame-Options";
 
-  return text + " owasp security fix";
+  if (t.includes("csp"))
+    return "OWASP Content Security Policy XSS protection header CSP";
+
+  if (t.includes("xss"))
+    return "OWASP Cross Site Scripting Prevention Cheat Sheet output encoding";
+
+  if (t.includes("csrf"))
+    return "OWASP CSRF prevention token same-site cookies";
+
+  return text + " OWASP security best practice vulnerability fix";
 }
 
 async function searchOWASPDocs(query) {
@@ -53,17 +58,28 @@ async function callGeminiWithGrounding(userPrompt) {
     searchResults = await searchOWASPDocs("owasp top 10 web vulnerabilities");
   }
 
-  const context = searchResults
-    .map((r) => {
-      const title =
-        r.document?.derivedStructData?.fields?.title?.stringValue || "";
-      const snippet =
-        r.document?.derivedStructData?.fields?.extractive_answers?.listValue
-          ?.values?.[0]?.structValue?.fields?.content?.stringValue || "";
-      return `[${title}]: ${snippet}`;
-    })
-    .filter((s) => s.length > 10)
-    .join("\n\n");
+ const context = searchResults
+  .slice(0, 3) // garde seulement les 3 meilleurs docs
+  .map((r) => {
+    const title =
+      r.document?.derivedStructData?.fields?.title?.stringValue || "";
+
+    const answers =
+      r.document?.derivedStructData?.fields?.extractive_answers?.listValue
+        ?.values || [];
+
+    const snippets = answers
+      .slice(0, 2) // prend 2 passages par document
+      .map(
+        (a) => a.structValue?.fields?.content?.stringValue || ""
+      )
+      .filter(Boolean)
+      .join(" ");
+
+    return `[${title}]: ${snippets}`;
+  })
+  .filter((s) => s.length > 10)
+  .join("\n\n");
 
   console.log(`✅ ${searchResults.length} docs OWASP trouvés`);
 
