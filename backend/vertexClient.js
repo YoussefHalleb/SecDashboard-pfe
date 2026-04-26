@@ -149,7 +149,7 @@ CODE FORMAT:
 - code_fix_example must FIX the root cause (not just block one payload)
 - code_fix_example must still be valid JSON string
 - escape all double quotes with \\"
-- do not use markdown fences
+- do not use markdown fences`,
     },
   ],
 },
