@@ -701,12 +701,10 @@ Rules:
 - priority: based on cvss_score + context
 - be concise, practical, and specific to the actual finding data
 - The root JSON must be an object with an "items" array, never a raw array.
-- code_fix_example: provide COMPLETE secure code or configuration fix
-- code_fix_example: may include multiple lines (use \\n for new lines)
-- code_fix_example: must fix the root cause (not just block one payload)
-- code_fix_example: must be realistic and production-ready
-- code_fix_example: may include headers, middleware, or config
-- code_fix_example: must be valid JSON string (escape quotes)
+- code_fix_example: maximum 5 lines of code, concise and focused
+- code_fix_example: application-level fix only (Node.js, Express, middleware)
+- code_fix_example: NO nginx/server config blocks
+- code_fix_example: must be valid JSON string (escape quotes with \\")
 - do not use markdown fences
 
 Product: ${product}
