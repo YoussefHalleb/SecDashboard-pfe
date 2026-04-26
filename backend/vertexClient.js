@@ -2,7 +2,7 @@ require("dotenv").config();
 const { SearchServiceClient } = require("@google-cloud/discoveryengine").v1beta;
 const { GoogleAuth } = require("google-auth-library");
 const axios = require("axios");
-
+ 
 const PROJECT_ID = process.env.GCP_PROJECT_ID;
 const LOCATION = process.env.VERTEX_LOCATION || "global";
 const ENGINE_ID = process.env.VERTEX_ENGINE_ID;
