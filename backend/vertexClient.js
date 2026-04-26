@@ -143,9 +143,9 @@ SECURE CODE RULES:
 - For HTTP-only site, force HTTPS and HSTS
 
 CODE FORMAT:
-- code_fix_example may contain complete secure code or configuration
-- code_fix_example may include multiple lines (use \\n for new lines)
-- code_fix_example must be realistic and production-ready
+- code_fix_example: maximum 5 lines, application-level only
+- code_fix_example: NO nginx or server configuration blocks
+- code_fix_example: short and focused fix
 - code_fix_example must FIX the root cause (not just block one payload)
 - code_fix_example must implement a secure design, not only a patch
 - code_fix_example must still be valid JSON string
