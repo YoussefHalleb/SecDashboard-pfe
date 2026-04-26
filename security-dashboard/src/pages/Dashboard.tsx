@@ -376,7 +376,16 @@ export default function Dashboard() {
                   </p>
 
                   <div className="space-y-2">
-                    {prioritizedFindings.slice(0, 15).map((f) => (
+                    {Array.from(
+  new Map(
+    prioritizedFindings.map((f) => [
+      `${f.title}-${f.scanner}`,
+      f,
+    ])
+  ).values()
+)
+  .slice(0, 15)
+  .map((f) => (
                       <div key={f.id} className="bg-slate-800 border border-slate-700 rounded-lg px-4 py-3">
                         {/* Header row */}
                         <div className="flex items-center justify-between mb-2">
