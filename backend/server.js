@@ -13,8 +13,20 @@ function safeParseJSON(raw) {
   try {
     let cleaned = raw.replace(/```json|```/gi, "").trim();
 
-    const first = cleaned.indexOf("{");
-    const last = cleaned.lastIndexOf("}");
+    // accepte soit { ... } soit [ ... ]
+    const firstObj = cleaned.indexOf("{");
+    const firstArr = cleaned.indexOf("[");
+
+    let first;
+    let last;
+
+    if (firstArr !== -1 && (firstArr < firstObj || firstObj === -1)) {
+      first = firstArr;
+      last = cleaned.lastIndexOf("]");
+    } else {
+      first = firstObj;
+      last = cleaned.lastIndexOf("}");
+    }
 
     if (first === -1 || last === -1) {
       throw new Error("No valid JSON found");
@@ -22,13 +34,14 @@ function safeParseJSON(raw) {
 
     cleaned = cleaned.slice(first, last + 1);
 
-    // 🔥 FIX : supprimer code cassé
-    cleaned = cleaned.replace(
-      /"code_fix_example":\s*"[^"]*$/g,
-      `"code_fix_example": ""`
-    );
+    const parsed = JSON.parse(cleaned);
 
-    return JSON.parse(cleaned);
+    // si Gemini retourne directement un tableau, on le transforme en { items: [...] }
+    if (Array.isArray(parsed)) {
+      return { items: parsed };
+    }
+
+    return parsed;
   } catch (e) {
     console.error("❌ JSON PARSE FAILED");
     console.error(raw);
@@ -686,7 +699,7 @@ Rules:
 - remediation: explain the fix clearly with OWASP reference
 - priority: based on cvss_score + context
 - be concise, practical, and specific to the actual finding data
-
+- The root JSON must be an object with an "items" array, never a raw array.
 - code_fix_example: provide COMPLETE secure code or configuration fix
 - code_fix_example: may include multiple lines (use \\n for new lines)
 - code_fix_example: must fix the root cause (not just block one payload)
