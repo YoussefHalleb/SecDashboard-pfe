@@ -40,6 +40,7 @@ type RecommendationStatus = "proposed" | "approved" | "rejected";
 export default function Dashboard() {
   const [selectedRepo, setSelectedRepo] = useState<Repository | null>(null);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+  const [prioritizedFindings, setPrioritizedFindings] = useState<any[]>([]);
   const [loadingAI, setLoadingAI] = useState(false);
   const [aiMessage, setAiMessage] = useState<string>("");
   const [aiSource, setAiSource] = useState<"" | "generated" | "database">("");
@@ -382,12 +383,16 @@ export default function Dashboard() {
 
                 <div className="flex gap-2">
                   <button
-                    onClick={() => {
-                      setSelectedRepo(repo);
-                      setRecommendations([]);
-                      setAiMessage("");
-                      loadPerformance(repo.id);
-                    }}
+                    onClick={async () => {
+  setSelectedRepo(repo);
+  setRecommendations([]);
+  setPrioritizedFindings([]);
+  setAiMessage("");
+  loadPerformance(repo.id);
+
+  const res = await api.get(`/api/repositories/${repo.id}/prioritized-findings`);
+  setPrioritizedFindings(res.data);
+}}
                     className="flex-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 text-slate-300 hover:text-white text-sm font-semibold py-2.5 rounded-xl transition"
                   >
                     View Details →
@@ -411,6 +416,7 @@ export default function Dashboard() {
           <div className="bg-slate-900 border border-slate-700 w-full max-w-6xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
             {/* Modal Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
+              
               <div>
                 <h2 className="font-bold text-white text-lg">
                   {selectedRepo.name}
@@ -469,7 +475,39 @@ export default function Dashboard() {
                 </button>
               </div>
             </div>
+{/* 🔥 AI PRIORITIZATION */}
+{prioritizedFindings.length > 0 && (
+  <div className="px-6 py-4 border-b border-slate-800">
+    <h3 className="text-sm font-bold text-purple-400 mb-3">
+      🔥 AI Prioritized Vulnerabilities
+    </h3>
 
+    <div className="space-y-2 max-h-60 overflow-y-auto">
+      {prioritizedFindings.slice(0, 10).map((f) => (
+        <div
+          key={f.id}
+          className="flex items-center justify-between bg-slate-800 border border-slate-700 rounded-lg px-4 py-2"
+        >
+          <div>
+            <div className="text-sm font-semibold text-white">{f.title}</div>
+            <div className="text-xs text-slate-500">
+              #{f.id} · {f.severity}
+            </div>
+          </div>
+
+          <div className="text-right">
+            <div className="text-lg font-black text-purple-400">
+              {f.priority_score}
+            </div>
+            <div className="text-xs text-slate-500">
+              {f.priority_label}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+)}
             {/* Modal Body */}
             <div className="overflow-y-auto flex-1 p-6 space-y-5">
               {/* AI Status */}
