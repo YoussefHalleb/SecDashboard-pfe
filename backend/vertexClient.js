@@ -143,16 +143,19 @@ SECURE CODE RULES:
 - For HTTP-only site, force HTTPS and HSTS
 
 CODE FORMAT:
-- code_fix_example maximum 180 characters
-- code_fix_example no comments
-- code_fix_example no explanations
-- code_fix_example must be practical production-style code`,
+- code_fix_example may contain complete secure code or configuration
+- code_fix_example may include multiple lines (use \\n for new lines)
+- code_fix_example must be realistic and production-ready
+- code_fix_example must FIX the root cause (not just block one payload)
+- code_fix_example must still be valid JSON string
+- escape all double quotes with \\"
+- do not use markdown fences
     },
   ],
 },
     generationConfig: {
       temperature: 0.2,
-      maxOutputTokens: 8192,
+      maxOutputTokens: 4096,
     },
   };
 
