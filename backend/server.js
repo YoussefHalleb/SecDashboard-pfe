@@ -1032,7 +1032,18 @@ app.get("/api/repositories/:id/prioritized-findings", async (req, res) => {
 
     prioritized.sort((a, b) => b.priority_score - a.priority_score);
 
-    res.json(prioritized);
+
+const unique = Array.from(
+  new Map(
+    prioritized.map((f) => [
+      `${f.title}-${f.scanner}`,
+      f,
+    ])
+  ).values()
+);
+
+// 3. Retourner seulement les findings uniques
+res.json(unique);
   } catch (error) {
     console.error(error.message);
     res.status(500).json({ error: "Failed to fetch prioritized findings" });
