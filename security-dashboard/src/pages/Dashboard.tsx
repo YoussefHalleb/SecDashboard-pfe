@@ -46,6 +46,7 @@ export default function Dashboard() {
   const [aiSource, setAiSource] = useState<"" | "generated" | "database">("");
   const [perfResults, setPerfResults] = useState<any[]>([]);
   const [loadingPerf, setLoadingPerf] = useState(false);
+
   const handleLogout = async () => {
     try {
       await logout();
@@ -106,6 +107,7 @@ export default function Dashboard() {
       alert("Reject failed");
     }
   };
+
   const deleteRepo = async (repoId: number) => {
     if (!confirm("Supprimer ce repository et toutes ses données ?")) return;
     try {
@@ -116,6 +118,7 @@ export default function Dashboard() {
       alert("Delete failed");
     }
   };
+
   const generateAI = async () => {
     if (!selectedRepo || loadingAI) return;
     setLoadingAI(true);
@@ -174,24 +177,9 @@ export default function Dashboard() {
     return (
       <div className="flex justify-center items-center min-h-screen bg-slate-950">
         <div className="flex items-center gap-3 text-slate-400">
-          <svg
-            className="w-5 h-5 animate-spin text-emerald-500"
-            viewBox="0 0 24 24"
-            fill="none"
-          >
-            <circle
-              className="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              strokeWidth="4"
-            />
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8v8z"
-            />
+          <svg className="w-5 h-5 animate-spin text-emerald-500" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
           </svg>
           Loading...
         </div>
@@ -207,12 +195,8 @@ export default function Dashboard() {
             <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center text-sm font-bold text-slate-900">
               D
             </div>
-            <span className="font-bold text-white tracking-tight">
-              DevSecOps
-            </span>
-            <span className="text-slate-600 text-sm hidden sm:block">
-              / Dashboard
-            </span>
+            <span className="font-bold text-white tracking-tight">DevSecOps</span>
+            <span className="text-slate-600 text-sm hidden sm:block">/ Dashboard</span>
           </div>
           <button
             onClick={handleLogout}
@@ -224,10 +208,8 @@ export default function Dashboard() {
       </nav>
 
       <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
-        {/* Pipeline */}
         <PipelinePage onFinish={() => {}} />
 
-        {/* Section title */}
         <div className="flex items-center gap-3">
           <h2 className="text-lg font-bold text-white">Repositories</h2>
           <span className="bg-slate-800 text-slate-400 text-xs font-mono px-2 py-0.5 rounded-full">
@@ -239,117 +221,54 @@ export default function Dashboard() {
         <div className="grid md:grid-cols-2 gap-6">
           {data.map((repo: Repository) => {
             const counts = {
-              Critical: repo.vulnerabilities.filter(
-                (v) => v.severity === "Critical",
-              ).length,
-              High: repo.vulnerabilities.filter((v) => v.severity === "High")
-                .length,
-              Medium: repo.vulnerabilities.filter(
-                (v) => v.severity === "Medium",
-              ).length,
-              Low: repo.vulnerabilities.filter((v) => v.severity === "Low")
-                .length,
+              Critical: repo.vulnerabilities.filter((v) => v.severity === "Critical").length,
+              High: repo.vulnerabilities.filter((v) => v.severity === "High").length,
+              Medium: repo.vulnerabilities.filter((v) => v.severity === "Medium").length,
+              Low: repo.vulnerabilities.filter((v) => v.severity === "Low").length,
             };
-            const trivy = repo.vulnerabilities.filter(
-              (v) => v.scanner === "Trivy Scan",
-            );
-            const zap = repo.vulnerabilities.filter(
-              (v) => v.scanner === "ZAP Scan",
-            );
+            const trivy = repo.vulnerabilities.filter((v) => v.scanner === "Trivy Scan");
+            const zap = repo.vulnerabilities.filter((v) => v.scanner === "ZAP Scan");
             const total = repo.vulnerabilities.length;
-            const riskScore =
-              counts.Critical * 10 +
-              counts.High * 5 +
-              counts.Medium * 2 +
-              counts.Low;
+            const riskScore = counts.Critical * 10 + counts.High * 5 + counts.Medium * 2 + counts.Low;
             const riskColor =
-              counts.Critical > 0
-                ? "text-red-400"
-                : counts.High > 0
-                  ? "text-orange-400"
-                  : "text-emerald-400";
+              counts.Critical > 0 ? "text-red-400" : counts.High > 0 ? "text-orange-400" : "text-emerald-400";
 
             return (
-              <div
-                key={repo.id}
-                className="bg-slate-900 border border-slate-800 rounded-2xl p-6 hover:border-slate-700 transition group"
-              >
-                {/* Card Header */}
+              <div key={repo.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 hover:border-slate-700 transition group">
                 <div className="flex items-start justify-between mb-5">
                   <div>
-                    <h3 className="font-bold text-white text-lg leading-tight">
-                      {repo.name}
-                    </h3>
-                    <p className="text-slate-500 text-xs mt-0.5">
-                      {total} vulnerabilities total
-                    </p>
+                    <h3 className="font-bold text-white text-lg leading-tight">{repo.name}</h3>
+                    <p className="text-slate-500 text-xs mt-0.5">{total} vulnerabilities total</p>
                   </div>
                   <div className="text-right">
-                    <div
-                      className={`text-2xl font-black font-mono ${riskColor}`}
-                    >
-                      {riskScore}
-                    </div>
+                    <div className={`text-2xl font-black font-mono ${riskColor}`}>{riskScore}</div>
                     <div className="text-slate-600 text-xs">risk score</div>
                   </div>
                 </div>
 
-                {/* Severity pills */}
                 <div className="flex gap-2 mb-5">
                   {[
-                    {
-                      label: "Critical",
-                      count: counts.Critical,
-                      cls: "bg-red-500/10 text-red-400 border-red-500/20",
-                    },
-                    {
-                      label: "High",
-                      count: counts.High,
-                      cls: "bg-orange-500/10 text-orange-400 border-orange-500/20",
-                    },
-                    {
-                      label: "Medium",
-                      count: counts.Medium,
-                      cls: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
-                    },
-                    {
-                      label: "Low",
-                      count: counts.Low,
-                      cls: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-                    },
+                    { label: "Critical", count: counts.Critical, cls: "bg-red-500/10 text-red-400 border-red-500/20" },
+                    { label: "High", count: counts.High, cls: "bg-orange-500/10 text-orange-400 border-orange-500/20" },
+                    { label: "Medium", count: counts.Medium, cls: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20" },
+                    { label: "Low", count: counts.Low, cls: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" },
                   ].map(({ label, count, cls }) => (
-                    <div
-                      key={label}
-                      className={`flex-1 border rounded-xl p-2 text-center ${cls}`}
-                    >
-                      <div className="font-bold text-base leading-none">
-                        {count}
-                      </div>
+                    <div key={label} className={`flex-1 border rounded-xl p-2 text-center ${cls}`}>
+                      <div className="font-bold text-base leading-none">{count}</div>
                       <div className="text-xs mt-0.5 opacity-70">{label}</div>
                     </div>
                   ))}
                 </div>
 
-                {/* Scanner table */}
                 <div className="bg-slate-800/50 rounded-xl overflow-hidden mb-5 border border-slate-700/50">
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="border-b border-slate-700/50">
-                        <th className="px-3 py-2 text-left text-slate-500 font-semibold">
-                          Scanner
-                        </th>
-                        <th className="px-3 py-2 text-center text-red-400/70">
-                          C
-                        </th>
-                        <th className="px-3 py-2 text-center text-orange-400/70">
-                          H
-                        </th>
-                        <th className="px-3 py-2 text-center text-yellow-400/70">
-                          M
-                        </th>
-                        <th className="px-3 py-2 text-center text-emerald-400/70">
-                          L
-                        </th>
+                        <th className="px-3 py-2 text-left text-slate-500 font-semibold">Scanner</th>
+                        <th className="px-3 py-2 text-center text-red-400/70">C</th>
+                        <th className="px-3 py-2 text-center text-orange-400/70">H</th>
+                        <th className="px-3 py-2 text-center text-yellow-400/70">M</th>
+                        <th className="px-3 py-2 text-center text-emerald-400/70">L</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -357,22 +276,11 @@ export default function Dashboard() {
                         { label: "🛡️ Trivy", data: trivy },
                         { label: "⚡ ZAP", data: zap },
                       ].map(({ label, data: scanData }) => (
-                        <tr
-                          key={label}
-                          className="border-t border-slate-700/30"
-                        >
-                          <td className="px-3 py-2 text-slate-300 font-medium">
-                            {label}
-                          </td>
+                        <tr key={label} className="border-t border-slate-700/30">
+                          <td className="px-3 py-2 text-slate-300 font-medium">{label}</td>
                           {["Critical", "High", "Medium", "Low"].map((sev) => (
-                            <td
-                              key={sev}
-                              className="px-3 py-2 text-center text-slate-400 font-mono"
-                            >
-                              {
-                                scanData.filter((v) => v.severity === sev)
-                                  .length
-                              }
+                            <td key={sev} className="px-3 py-2 text-center text-slate-400 font-mono">
+                              {scanData.filter((v) => v.severity === sev).length}
                             </td>
                           ))}
                         </tr>
@@ -384,15 +292,14 @@ export default function Dashboard() {
                 <div className="flex gap-2">
                   <button
                     onClick={async () => {
-  setSelectedRepo(repo);
-  setRecommendations([]);
-  setPrioritizedFindings([]);
-  setAiMessage("");
-  loadPerformance(repo.id);
-
-  const res = await api.get(`/api/repositories/${repo.id}/prioritized-findings`);
-  setPrioritizedFindings(res.data);
-}}
+                      setSelectedRepo(repo);
+                      setRecommendations([]);
+                      setPrioritizedFindings([]);
+                      setAiMessage("");
+                      loadPerformance(repo.id);
+                      const res = await api.get(`/api/repositories/${repo.id}/prioritized-findings`);
+                      setPrioritizedFindings(res.data);
+                    }}
                     className="flex-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 text-slate-300 hover:text-white text-sm font-semibold py-2.5 rounded-xl transition"
                   >
                     View Details →
@@ -414,23 +321,16 @@ export default function Dashboard() {
       {selectedRepo && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex justify-center items-center z-50 p-4">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-6xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
+
             {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
-              
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 shrink-0">
               <div>
-                <h2 className="font-bold text-white text-lg">
-                  {selectedRepo.name}
-                </h2>
+                <h2 className="font-bold text-white text-lg">{selectedRepo.name}</h2>
                 <p className="text-slate-500 text-xs">Vulnerability Details</p>
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() =>
-                    window.open(
-                      `/api/products/${selectedRepo.id}/zap-report`,
-                      "_blank",
-                    )
-                  }
+                  onClick={() => window.open(`/api/products/${selectedRepo.id}/zap-report`, "_blank")}
                   className="flex items-center gap-1.5 bg-orange-500/10 border border-orange-500/30 text-orange-400 hover:bg-orange-500/20 text-xs font-semibold px-3 py-1.5 rounded-lg transition"
                 >
                   📄 ZAP Report
@@ -442,24 +342,9 @@ export default function Dashboard() {
                 >
                   {loadingAI ? (
                     <>
-                      <svg
-                        className="w-3 h-3 animate-spin"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                      >
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                        />
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8v8z"
-                        />
+                      <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
                       </svg>
                       Generating...
                     </>
@@ -475,204 +360,186 @@ export default function Dashboard() {
                 </button>
               </div>
             </div>
-{/* 🔥 AI PRIORITIZATION */}
-{prioritizedFindings.length > 0 && (
-  <div className="px-6 py-4 border-b border-slate-800">
-    <h3 className="text-sm font-bold text-purple-400 mb-3">
-      🔥 AI Prioritized Vulnerabilities
-    </h3>
 
-    <div className="space-y-2 max-h-60 overflow-y-auto">
-      {prioritizedFindings.slice(0, 10).map((f) => (
-        <div
-          key={f.id}
-          className="flex items-center justify-between bg-slate-800 border border-slate-700 rounded-lg px-4 py-2"
-        >
-          <div>
-            <div className="text-sm font-semibold text-white">{f.title}</div>
-            <div className="text-xs text-slate-500">
-              #{f.id} · {f.severity}
-            </div>
-          </div>
-
-          <div className="text-right">
-            <div className="text-lg font-black text-purple-400">
-              {f.priority_score}
-            </div>
-            <div className="text-xs text-slate-500">
-              {f.priority_label}
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  </div>
-)}
-            {/* Modal Body */}
+            {/* Modal Body — scrollable */}
             <div className="overflow-y-auto flex-1 p-6 space-y-5">
+
+              {/* 🔥 AI PRIORITIZATION — multi-criteria model */}
+              {prioritizedFindings.length > 0 && (
+                <div className="bg-slate-800/50 border border-purple-500/20 rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-1">
+                    <h3 className="text-sm font-bold text-purple-400">🔥 AI Prioritized Vulnerabilities</h3>
+                    <span className="text-xs text-slate-500">Score /100 · CVSS·Exploit·Business·Evidence·OWASP·URL·Scanner</span>
+                  </div>
+                  <p className="text-xs text-slate-500 mb-4">
+                    Multi-criteria model: CVSS (30pts) + Exploitability (20pts) + Business Impact (15pts) + Evidence (15pts) + OWASP (10pts) + Sensitive URL (5pts) + Scanner (5pts)
+                  </p>
+
+                  <div className="space-y-2">
+                    {prioritizedFindings.slice(0, 15).map((f) => (
+                      <div key={f.id} className="bg-slate-800 border border-slate-700 rounded-lg px-4 py-3">
+                        {/* Header row */}
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-semibold text-white truncate">{f.title}</div>
+                            <div className="text-xs text-slate-500 mt-0.5">
+                              #{f.id} · {f.severity} · {f.scanner}
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0 ml-4">
+                            <div className="text-xl font-black text-purple-400 font-mono">{f.priority_score}</div>
+                            <span className={`text-xs font-bold px-2 py-0.5 rounded border ${
+                              f.priority_label === "Critical" ? "bg-red-500/10 border-red-500/30 text-red-400"
+                              : f.priority_label === "High" ? "bg-orange-500/10 border-orange-500/30 text-orange-400"
+                              : f.priority_label === "Medium" ? "bg-yellow-500/10 border-yellow-500/30 text-yellow-400"
+                              : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                            }`}>
+                              {f.priority_label}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Progress bar */}
+                        <div className="w-full bg-slate-700 rounded-full h-1.5 mb-2">
+                          <div
+                            className={`h-1.5 rounded-full transition-all ${
+                              f.priority_score >= 85 ? "bg-red-500"
+                              : f.priority_score >= 65 ? "bg-orange-500"
+                              : f.priority_score >= 40 ? "bg-yellow-500"
+                              : "bg-emerald-500"
+                            }`}
+                            style={{ width: `${f.priority_score}%` }}
+                          />
+                        </div>
+
+                        {/* Reasons tags */}
+                        {f.priority_reasons?.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {f.priority_reasons.map((r: string, i: number) => (
+                              <span key={i} className="text-xs bg-slate-700 text-slate-400 px-2 py-0.5 rounded-full">
+                                {r}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* AI Status */}
               {!!aiMessage && (
-                <div
-                  className={`flex items-center gap-2 text-xs px-4 py-2.5 rounded-xl border ${
-                    aiMessage.includes("Failed") || aiMessage.includes("❌")
-                      ? "bg-red-500/10 border-red-500/20 text-red-400"
-                      : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-                  }`}
-                >
+                <div className={`flex items-center gap-2 text-xs px-4 py-2.5 rounded-xl border ${
+                  aiMessage.includes("Failed") || aiMessage.includes("❌")
+                    ? "bg-red-500/10 border-red-500/20 text-red-400"
+                    : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                }`}>
                   <span>{aiMessage}</span>
                   {!!aiSource && !loadingAI && (
                     <span className="ml-auto text-slate-500">
-                      {aiSource === "generated"
-                        ? "Generated now"
-                        : "From database"}
+                      {aiSource === "generated" ? "Generated now" : "From database"}
                     </span>
                   )}
                 </div>
               )}
 
-              {/* AI Recommendations */}
+              {/* 🛡️ AI Recommendations */}
               {recommendations.length > 0 && (
                 <div className="bg-slate-800/50 border border-violet-500/20 rounded-xl p-4">
-                  <h3 className="font-bold text-violet-400 text-sm mb-3">
-                    🛡️ AI Security Recommendations
-                  </h3>
-                  <div className="space-y-3 pr-1">
+                  <h3 className="font-bold text-violet-400 text-sm mb-3">🛡️ AI Security Recommendations</h3>
+                  <div className="space-y-3">
                     {recommendations.map((rec) => (
-                      <div
-                        key={rec.id}
-                        className="bg-slate-900 border border-slate-700 rounded-xl p-4"
-                      >
+                      <div key={rec.id} className="bg-slate-900 border border-slate-700 rounded-xl p-4">
                         {/* Header */}
                         <div className="flex items-start justify-between gap-3 mb-3">
                           <div>
                             <div className="font-bold text-sm text-violet-300 mb-1">
                               {rec.title || "Vulnerability"}
                             </div>
-                            <div className="text-xs text-slate-500">
-                              Finding #{rec.finding_id}
-                            </div>
+                            <div className="text-xs text-slate-500">Finding #{rec.finding_id}</div>
                           </div>
-
-                          {/* Priority badge */}
                           {rec.priority && (
-                            <span
-                              className={`text-xs font-bold px-2 py-1 rounded-lg border ${
-                                rec.priority === "Critical"
-                                  ? "bg-red-500/10 border-red-500/30 text-red-400"
-                                  : rec.priority === "High"
-                                    ? "bg-orange-500/10 border-orange-500/30 text-orange-400"
-                                    : rec.priority === "Medium"
-                                      ? "bg-yellow-500/10 border-yellow-500/30 text-yellow-400"
-                                      : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
-                              }`}
-                            >
+                            <span className={`text-xs font-bold px-2 py-1 rounded-lg border ${
+                              rec.priority === "Critical" ? "bg-red-500/10 border-red-500/30 text-red-400"
+                              : rec.priority === "High" ? "bg-orange-500/10 border-orange-500/30 text-orange-400"
+                              : rec.priority === "Medium" ? "bg-yellow-500/10 border-yellow-500/30 text-yellow-400"
+                              : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                            }`}>
                               {rec.priority}
                             </span>
                           )}
                         </div>
 
                         {/* Scores row */}
-                        <div className="grid grid-cols-6 gap-4 w-full bg-slate-800/50 rounded-xl px-4 py-3">
+                        <div className="grid grid-cols-6 gap-4 w-full bg-slate-800/50 rounded-xl px-4 py-3 mb-3">
                           {rec.cvss_score && (
                             <div className="text-center">
-                              <div className="text-lg font-black text-orange-400 font-mono">
-                                {rec.cvss_score}
-                              </div>
+                              <div className="text-lg font-black text-orange-400 font-mono">{rec.cvss_score}</div>
                               <div className="text-xs text-slate-500">CVSS</div>
                             </div>
                           )}
                           {rec.ai_risk_score && (
                             <div className="text-center">
-                              <div className="text-lg font-black text-violet-400 font-mono">
-                                {rec.ai_risk_score}
-                              </div>
-                              <div className="text-xs text-slate-500">
-                                AI Risk
-                              </div>
+                              <div className="text-lg font-black text-violet-400 font-mono">{rec.ai_risk_score}</div>
+                              <div className="text-xs text-slate-500">AI Risk</div>
                             </div>
                           )}
                           {rec.confidence && (
                             <div className="text-center">
-                              <div className="text-lg font-black text-emerald-400 font-mono">
-                                {rec.confidence}%
-                              </div>
-                              <div className="text-xs text-slate-500">
-                                Confidence
-                              </div>
+                              <div className="text-lg font-black text-emerald-400 font-mono">{rec.confidence}%</div>
+                              <div className="text-xs text-slate-500">Confidence</div>
                             </div>
                           )}
                           {rec.false_positive_likelihood && (
                             <div className="text-center">
-                              <div
-                                className={`text-sm font-bold ${
-                                  rec.false_positive_likelihood === "Low"
-                                    ? "text-emerald-400"
-                                    : rec.false_positive_likelihood === "Medium"
-                                      ? "text-yellow-400"
-                                      : "text-red-400"
-                                }`}
-                              >
+                              <div className={`text-sm font-bold ${
+                                rec.false_positive_likelihood === "Low" ? "text-emerald-400"
+                                : rec.false_positive_likelihood === "Medium" ? "text-yellow-400"
+                                : "text-red-400"
+                              }`}>
                                 {rec.false_positive_likelihood}
                               </div>
-                              <div className="text-xs text-slate-500">
-                                False Positive
-                              </div>
+                              <div className="text-xs text-slate-500">False Positive</div>
                             </div>
                           )}
                           {rec.attack_complexity && (
                             <div className="text-center">
-                              <div className="text-sm font-bold text-slate-300">
-                                {rec.attack_complexity}
-                              </div>
-                              <div className="text-xs text-slate-500">
-                                Complexity
-                              </div>
+                              <div className="text-sm font-bold text-slate-300">{rec.attack_complexity}</div>
+                              <div className="text-xs text-slate-500">Complexity</div>
                             </div>
                           )}
                           {rec.owasp_category && (
                             <div className="text-center">
-                              <div className="text-sm font-bold text-blue-400">
-                                {rec.owasp_category}
-                              </div>
-                              <div className="text-xs text-slate-500">
-                                OWASP
-                              </div>
+                              <div className="text-sm font-bold text-blue-400">{rec.owasp_category}</div>
+                              <div className="text-xs text-slate-500">OWASP</div>
                             </div>
                           )}
                         </div>
 
-                        {/* CVSS Vector */}
                         {rec.cvss_vector && (
                           <div className="text-xs font-mono text-slate-500 bg-slate-800 px-3 py-1.5 rounded-lg mb-3">
                             {rec.cvss_vector}
                           </div>
                         )}
 
-                        {/* Content */}
                         <div
                           className="text-xs text-slate-400 leading-relaxed mb-3"
                           dangerouslySetInnerHTML={{
                             __html: rec.content
-                              .replace(
-                                /\*\*(.*?)\*\*/g,
-                                "<strong class='text-slate-200'>$1</strong>",
-                              )
+                              .replace(/\*\*(.*?)\*\*/g, "<strong class='text-slate-200'>$1</strong>")
                               .replace(/\n/g, "<br/>"),
                           }}
                         />
-                        {/* 🔥 CODE FIX */}
+
                         {rec.code_fix_example && (
                           <div className="mt-3">
                             <div className="flex items-center justify-between mb-1">
-                              <span className="text-xs text-slate-500">
-                                💻 Secure Code Fix
-                              </span>
+                              <span className="text-xs text-slate-500">💻 Secure Code Fix</span>
                               <button
                                 onClick={() => {
                                   if (rec.code_fix_example) {
-                                    navigator.clipboard.writeText(
-                                      rec.code_fix_example,
-                                    );
+                                    navigator.clipboard.writeText(rec.code_fix_example);
                                     alert("Copied!");
                                   }
                                 }}
@@ -681,14 +548,13 @@ export default function Dashboard() {
                                 Copy
                               </button>
                             </div>
-
                             <div className="bg-black/40 border border-slate-700 rounded-lg p-3 font-mono text-xs text-green-400 overflow-x-auto">
                               <pre>{rec.code_fix_example}</pre>
                             </div>
                           </div>
                         )}
-                        {/* Approve / Reject */}
-                        <div className="flex items-center gap-2 pt-2 border-t border-slate-700/50">
+
+                        <div className="flex items-center gap-2 pt-2 border-t border-slate-700/50 mt-3">
                           {rec.status === "approved" ? (
                             <span className="text-xs bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-1 rounded-lg">
                               ✓ Approved
@@ -711,9 +577,7 @@ export default function Dashboard() {
                               >
                                 Reject
                               </button>
-                              <span className="text-xs text-violet-500 ml-auto">
-                                Proposed
-                              </span>
+                              <span className="text-xs text-violet-500 ml-auto">Proposed</span>
                             </>
                           )}
                         </div>
@@ -722,27 +586,13 @@ export default function Dashboard() {
                   </div>
                 </div>
               )}
-              {/* ← AJOUTER ICI — Performance Results */}
+
+              {/* Performance */}
               {loadingPerf && (
                 <div className="flex items-center gap-2 text-xs text-blue-400">
-                  <svg
-                    className="w-3 h-3 animate-spin"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8v8z"
-                    />
+                  <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
                   </svg>
                   Loading performance data...
                 </div>
@@ -750,152 +600,60 @@ export default function Dashboard() {
 
               {perfResults.length > 0 && (
                 <div className="bg-slate-800/50 border border-blue-500/20 rounded-xl p-4">
-                  <h3 className="font-bold text-blue-400 text-sm mb-3">
-                    ⚡ Performance Results
-                  </h3>
+                  <h3 className="font-bold text-blue-400 text-sm mb-3">⚡ Performance Results</h3>
                   {perfResults.slice(0, 1).map((perf) => {
-                    // ─── Calcul stabilité ───────────────────────
                     const issues = [];
-                    if (perf.avg_response_ms > 1000)
-                      issues.push("Avg response trop lent");
-                    if (perf.p95_response_ms > 2000)
-                      issues.push("P95 critique");
-                    if (parseFloat(perf.error_rate) > 5)
-                      issues.push("Taux d'erreur élevé");
-                    if (parseFloat(perf.throughput) < 5)
-                      issues.push("Débit trop faible");
+                    if (perf.avg_response_ms > 1000) issues.push("Avg response trop lent");
+                    if (perf.p95_response_ms > 2000) issues.push("P95 critique");
+                    if (parseFloat(perf.error_rate) > 5) issues.push("Taux d'erreur élevé");
+                    if (parseFloat(perf.throughput) < 5) issues.push("Débit trop faible");
 
                     const stable = issues.length === 0;
                     const warning = !stable && issues.length <= 1;
-
                     const stabilityColor = stable
                       ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
                       : warning
-                        ? "text-yellow-400 border-yellow-500/30 bg-yellow-500/10"
-                        : "text-red-400 border-red-500/30 bg-red-500/10";
-
-                    const stabilityLabel = stable
-                      ? "Stable"
-                      : warning
-                        ? "Instable"
-                        : "Critique";
+                      ? "text-yellow-400 border-yellow-500/30 bg-yellow-500/10"
+                      : "text-red-400 border-red-500/30 bg-red-500/10";
+                    const stabilityLabel = stable ? "Stable" : warning ? "Instable" : "Critique";
 
                     return (
                       <div key={perf.id}>
-                        {/* Badge stabilité */}
-                        <div
-                          className={`flex items-center justify-between border rounded-xl px-4 py-2.5 mb-4 ${stabilityColor}`}
-                        >
+                        <div className={`flex items-center justify-between border rounded-xl px-4 py-2.5 mb-4 ${stabilityColor}`}>
                           <div>
                             <div className="font-bold text-sm">
-                              {stable ? "✅" : warning ? "⚠️" : "❌"}{" "}
-                              Application {stabilityLabel}
+                              {stable ? "✅" : warning ? "⚠️" : "❌"} Application {stabilityLabel}
                             </div>
                             {issues.length > 0 && (
-                              <div className="text-xs mt-1 opacity-80">
-                                {issues.join(" · ")}
-                              </div>
+                              <div className="text-xs mt-1 opacity-80">{issues.join(" · ")}</div>
                             )}
                           </div>
-                          <div className="text-xs opacity-70">
-                            {perf.vus} VUs · {perf.duration_secs}s
-                          </div>
+                          <div className="text-xs opacity-70">{perf.vus} VUs · {perf.duration_secs}s</div>
                         </div>
 
-                        {/* Métriques */}
                         <div className="grid grid-cols-4 gap-3 mb-3">
                           {[
-                            {
-                              label: "Avg Response",
-                              value: `${Math.round(perf.avg_response_ms)}ms`,
-                              color:
-                                perf.avg_response_ms < 200
-                                  ? "text-emerald-400"
-                                  : perf.avg_response_ms < 500
-                                    ? "text-yellow-400"
-                                    : "text-red-400",
-                            },
-                            {
-                              label: "Throughput",
-                              value: `${parseFloat(perf.throughput || 0).toFixed(1)} req/s`,
-                              color:
-                                parseFloat(perf.throughput) > 50
-                                  ? "text-emerald-400"
-                                  : parseFloat(perf.throughput) > 10
-                                    ? "text-yellow-400"
-                                    : "text-red-400",
-                            },
-                            {
-                              label: "Error Rate",
-                              value: `${parseFloat(perf.error_rate || 0).toFixed(1)}%`,
-                              color:
-                                perf.error_rate < 0.1
-                                  ? "text-emerald-400"
-                                  : perf.error_rate < 1
-                                    ? "text-yellow-400"
-                                    : "text-red-400",
-                            },
-                            {
-                              label: "Total Requests",
-                              value: perf.total_requests,
-                              color: "text-slate-300",
-                            },
+                            { label: "Avg Response", value: `${Math.round(perf.avg_response_ms)}ms`, color: perf.avg_response_ms < 200 ? "text-emerald-400" : perf.avg_response_ms < 500 ? "text-yellow-400" : "text-red-400" },
+                            { label: "Throughput", value: `${parseFloat(perf.throughput || 0).toFixed(1)} req/s`, color: parseFloat(perf.throughput) > 50 ? "text-emerald-400" : parseFloat(perf.throughput) > 10 ? "text-yellow-400" : "text-red-400" },
+                            { label: "Error Rate", value: `${parseFloat(perf.error_rate || 0).toFixed(1)}%`, color: perf.error_rate < 0.1 ? "text-emerald-400" : perf.error_rate < 1 ? "text-yellow-400" : "text-red-400" },
+                            { label: "Total Requests", value: perf.total_requests, color: "text-slate-300" },
                           ].map(({ label, value, color }) => (
-                            <div
-                              key={label}
-                              className="bg-slate-900 rounded-lg p-2 text-center"
-                            >
-                              <div
-                                className={`font-bold text-lg font-mono ${color}`}
-                              >
-                                {value}
-                              </div>
-                              <div className="text-xs text-slate-500">
-                                {label}
-                              </div>
+                            <div key={label} className="bg-slate-900 rounded-lg p-2 text-center">
+                              <div className={`font-bold text-lg font-mono ${color}`}>{value}</div>
+                              <div className="text-xs text-slate-500">{label}</div>
                             </div>
                           ))}
                         </div>
 
-                        {/* P90 / P95 / Max */}
                         <div className="grid grid-cols-3 gap-2">
                           {[
-                            {
-                              label: "P90",
-                              value: `${Math.round(perf.p90_response_ms)}ms`,
-                              color:
-                                perf.p90_response_ms < 500
-                                  ? "text-emerald-400"
-                                  : perf.p90_response_ms < 1000
-                                    ? "text-yellow-400"
-                                    : "text-red-400",
-                            },
-                            {
-                              label: "P95",
-                              value: `${Math.round(perf.p95_response_ms)}ms`,
-                              color:
-                                perf.p95_response_ms < 1000
-                                  ? "text-emerald-400"
-                                  : perf.p95_response_ms < 2000
-                                    ? "text-yellow-400"
-                                    : "text-red-400",
-                            },
-                            {
-                              label: "Max",
-                              value: `${Math.round(perf.max_response_ms)}ms`,
-                              color: "text-slate-300",
-                            },
+                            { label: "P90", value: `${Math.round(perf.p90_response_ms)}ms`, color: perf.p90_response_ms < 500 ? "text-emerald-400" : perf.p90_response_ms < 1000 ? "text-yellow-400" : "text-red-400" },
+                            { label: "P95", value: `${Math.round(perf.p95_response_ms)}ms`, color: perf.p95_response_ms < 1000 ? "text-emerald-400" : perf.p95_response_ms < 2000 ? "text-yellow-400" : "text-red-400" },
+                            { label: "Max", value: `${Math.round(perf.max_response_ms)}ms`, color: "text-slate-300" },
                           ].map(({ label, value, color }) => (
-                            <div
-                              key={label}
-                              className="bg-slate-800 rounded-lg px-3 py-1.5 flex justify-between"
-                            >
-                              <span className="text-xs text-slate-500">
-                                {label}
-                              </span>
-                              <span className={`text-xs font-mono ${color}`}>
-                                {value}
-                              </span>
+                            <div key={label} className="bg-slate-800 rounded-lg px-3 py-1.5 flex justify-between">
+                              <span className="text-xs text-slate-500">{label}</span>
+                              <span className={`text-xs font-mono ${color}`}>{value}</span>
                             </div>
                           ))}
                         </div>
@@ -908,22 +666,13 @@ export default function Dashboard() {
                   })}
                 </div>
               )}
+
               {/* Vulnerability Sections */}
               {[
-                {
-                  title: "⚡ ZAP",
-                  color: "text-orange-400",
-                  scanner: "ZAP Scan",
-                },
-                {
-                  title: "🛡️ Trivy",
-                  color: "text-blue-400",
-                  scanner: "Trivy Scan",
-                },
+                { title: "⚡ ZAP", color: "text-orange-400", scanner: "ZAP Scan" },
+                { title: "🛡️ Trivy", color: "text-blue-400", scanner: "Trivy Scan" },
               ].map(({ title, color, scanner }) => {
-                const vulns = selectedRepo.vulnerabilities.filter(
-                  (v) => v.scanner === scanner,
-                );
+                const vulns = selectedRepo.vulnerabilities.filter((v) => v.scanner === scanner);
                 return (
                   <div key={scanner}>
                     <div className="flex items-center gap-2 mb-3">
@@ -939,12 +688,8 @@ export default function Dashboard() {
                           className="flex items-center justify-between bg-slate-800/50 border border-slate-700/50 rounded-xl px-4 py-2.5 hover:border-slate-600 transition"
                         >
                           <div>
-                            <p className="text-sm text-slate-200 font-medium leading-tight">
-                              {v.title}
-                            </p>
-                            <p className="text-xs text-slate-500">
-                              {v.component_name}
-                            </p>
+                            <p className="text-sm text-slate-200 font-medium leading-tight">{v.title}</p>
+                            <p className="text-xs text-slate-500">{v.component_name}</p>
                           </div>
                           <SeverityBadge severity={v.severity} />
                         </div>
@@ -953,6 +698,7 @@ export default function Dashboard() {
                   </div>
                 );
               })}
+
             </div>
           </div>
         </div>
@@ -969,9 +715,7 @@ function SeverityBadge({ severity }: { severity: string }) {
     Low: "bg-emerald-500/10 border-emerald-500/30 text-emerald-400",
   };
   return (
-    <span
-      className={`border text-xs font-semibold px-2.5 py-1 rounded-lg ${cls[severity] || "bg-slate-700 text-slate-300"}`}
-    >
+    <span className={`border text-xs font-semibold px-2.5 py-1 rounded-lg ${cls[severity] || "bg-slate-700 text-slate-300"}`}>
       {severity}
     </span>
   );
