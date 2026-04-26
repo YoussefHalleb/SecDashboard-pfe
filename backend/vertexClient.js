@@ -124,12 +124,12 @@ CRITICAL JSON RULES:
 - JSON must be complete and valid
 - NEVER truncate output
 - ALWAYS close strings
-- code_fix_example must be a single-line JSON string
 - code_fix_example must not contain raw line breaks
 - Escape all double quotes inside code_fix_example with \\"
 - Replace all newlines in code_fix_example with \\n
 
 SECURE CODE RULES:
+- always return OWASP Top 10 category with ID (e.g., A01:2021)
 - code_fix_example must FIX the vulnerability securely
 - NEVER return vulnerable code
 - ALWAYS validate user input
@@ -147,6 +147,7 @@ CODE FORMAT:
 - code_fix_example may include multiple lines (use \\n for new lines)
 - code_fix_example must be realistic and production-ready
 - code_fix_example must FIX the root cause (not just block one payload)
+- code_fix_example must implement a secure design, not only a patch
 - code_fix_example must still be valid JSON string
 - escape all double quotes with \\"
 - do not use markdown fences`,
