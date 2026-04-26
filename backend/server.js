@@ -687,14 +687,13 @@ Rules:
 - priority: based on cvss_score + context
 - be concise, practical, and specific to the actual finding data
 
-- code_fix_example: return ONE short secure fix command/config line only
-- code_fix_example: maximum 180 characters
-- code_fix_example: no raw newlines
-- code_fix_example: no markdown
-- code_fix_example: escape quotes
-- NEVER generate long code
-- NEVER break JSON
-- ALWAYS close strings
+- code_fix_example: provide COMPLETE secure code or configuration fix
+- code_fix_example: may include multiple lines (use \\n for new lines)
+- code_fix_example: must fix the root cause (not just block one payload)
+- code_fix_example: must be realistic and production-ready
+- code_fix_example: may include headers, middleware, or config
+- code_fix_example: must be valid JSON string (escape quotes)
+- do not use markdown fences
 
 Product: ${product}
 
@@ -854,6 +853,7 @@ Return ONLY valid JSON in this exact format:
 Rules:
 - remediation: explain the fix
 - code_fix_example: provide REAL secure code example (Node.js, Java, or generic depending on context)
+- code_fix_example must fix root cause, not just block payload
 - include headers, middleware or config if needed
 - be concise and practical
 - exploitability: High|Medium|Low based on real attack feasibility
