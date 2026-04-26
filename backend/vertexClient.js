@@ -155,7 +155,7 @@ CODE FORMAT:
 },
     generationConfig: {
       temperature: 0.2,
-      maxOutputTokens: 4096,
+      maxOutputTokens: 8192,
     },
   };
 
