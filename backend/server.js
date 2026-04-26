@@ -313,6 +313,7 @@ app.get("/api/repositories", async (req, res) => {
             }));
 
             // STORE FINDINGS
+            // STORE FINDINGS
             for (const finding of findingsWithScanner) {
               await pool.query(
                 `
@@ -325,11 +326,7 @@ app.get("/api/repositories", async (req, res) => {
   scanner
 )
 VALUES ($1,$2,$3,$4,$5,$6)
-ON CONFLICT (id) DO UPDATE SET
-  title = EXCLUDED.title,
-  severity = EXCLUDED.severity,
-  description = EXCLUDED.description,
-  scanner = EXCLUDED.scanner
+ON CONFLICT DO NOTHING
                 `,
                 [
                   finding.id,
