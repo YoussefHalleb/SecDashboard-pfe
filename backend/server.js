@@ -1013,19 +1013,22 @@ app.get("/api/repositories/:id/prioritized-findings", async (req, res) => {
       [productId]
     );
 
-    const prioritized = rows.map((f) => {
-      const priority_score = computePriorityScore(f, {
-        cvss_score: f.cvss_score,
-        exploitability: f.exploitability || f.attack_complexity,
-        business_risk: f.business_risk,
-      });
+   const prioritized = rows.map((f) => {
+  const { score, reasons } = computePriorityScore(f, {
+    cvss_score: f.cvss_score,
+    exploitability: f.exploitability,
+    attack_complexity: f.attack_complexity,
+    business_risk: f.business_risk,
+    owasp_category: f.owasp_category,
+  });
 
-      return {
-        ...f,
-        priority_score,
-        priority_label: priorityLabel(priority_score),
-      };
-    });
+  return {
+    ...f,
+    priority_score: score,
+    priority_label: priorityLabel(score),
+    priority_reasons: reasons,
+  };
+});
 
     prioritized.sort((a, b) => b.priority_score - a.priority_score);
 
@@ -1037,38 +1040,79 @@ app.get("/api/repositories/:id/prioritized-findings", async (req, res) => {
 });
 function computePriorityScore(finding, ai = {}) {
   let score = 0;
+  const reasons = [];
 
+  // ─── 1. CVSS Score (30 pts) ───────────────────────
   const cvss = Number(ai.cvss_score || finding.cvss_score || 0);
-  score += (cvss / 10) * 40;
+  const cvssPoints = Math.round((cvss / 10) * 30);
+  score += cvssPoints;
+  if (cvss > 0) reasons.push(`CVSS ${cvss} (+${cvssPoints}pts)`);
 
+  // ─── 2. Exploitabilité (20 pts) ──────────────────
   const exploitMap = { High: 20, Medium: 10, Low: 5 };
-  score += exploitMap[ai.exploitability] || 0;
+  const exploitVal = ai.exploitability || ai.attack_complexity || "";
+  const exploitPoints = exploitMap[exploitVal] || 0;
+  score += exploitPoints;
+  if (exploitPoints > 0) reasons.push(`Exploitability ${exploitVal} (+${exploitPoints}pts)`);
 
-  const businessMap = { High: 20, Medium: 10, Low: 5 };
-  score += businessMap[ai.business_risk] || 0;
+  // ─── 3. Business Impact (15 pts) ─────────────────
+  const businessMap = { High: 15, Medium: 8, Low: 3 };
+  const businessPoints = businessMap[ai.business_risk] || 0;
+  score += businessPoints;
+  if (businessPoints > 0) reasons.push(`Business risk ${ai.business_risk} (+${businessPoints}pts)`);
 
-  if (finding.evidence) score += 10;
-  else if (finding.attack) score += 7;
-  else if (finding.description) score += 3;
+  // ─── 4. Evidence / Attack proof (15 pts) ─────────
+  let evidencePoints = 0;
+  if (finding.evidence) { evidencePoints = 15; reasons.push("Evidence confirmed (+15pts)"); }
+  else if (finding.attack) { evidencePoints = 10; reasons.push("Attack vector present (+10pts)"); }
+  else if (finding.description) { evidencePoints = 5; reasons.push("Description only (+5pts)"); }
+  score += evidencePoints;
 
-  const url = (finding.url || "").toLowerCase();
-  if (url.includes("admin") || url.includes("login") || url.includes("payment")) {
-    score += 10;
-  } else if (url.includes("api")) {
-    score += 5;
+  // ─── 5. OWASP Category (10 pts) ──────────────────
+  const owasp = (ai.owasp_category || finding.owasp_category || "").toUpperCase();
+  let owaspPoints = 0;
+  if (owasp.includes("A01") || owasp.includes("A02") || owasp.includes("A03")) {
+    owaspPoints = 10;
+  } else if (owasp.includes("A04") || owasp.includes("A05") || owasp.includes("A06")) {
+    owaspPoints = 7;
+  } else if (owasp) {
+    owaspPoints = 3;
   }
+  score += owaspPoints;
+  if (owaspPoints > 0) reasons.push(`OWASP ${owasp.slice(0,3)} (+${owaspPoints}pts)`);
 
-  const title = (finding.title || "").toLowerCase();
-  if (title.includes("injection")) score += 10;
-  if (title.includes("broken access") || title.includes("bypassing 403")) score += 10;
-  if (title.includes("xss")) score += 8;
+  // ─── 6. URL sensible (5 pts) ─────────────────────
+  const url = (finding.url || "").toLowerCase();
+  let urlPoints = 0;
+  if (url.includes("admin") || url.includes("login") || url.includes("payment") || url.includes("auth")) {
+    urlPoints = 5;
+  } else if (url.includes("api") || url.includes("user")) {
+    urlPoints = 3;
+  }
+  score += urlPoints;
+  if (urlPoints > 0) reasons.push(`Sensitive URL (+${urlPoints}pts)`);
 
-  return Math.min(Math.round(score), 100);
+  // ─── 7. Scanner (5 pts) ──────────────────────────
+  const scanner = (finding.scanner || "").toLowerCase();
+  let scannerPoints = 0;
+  if (scanner.includes("zap")) {
+    scannerPoints = 5; // ZAP = confirmed via real HTTP request
+    reasons.push("ZAP confirmed (+5pts)");
+  } else if (scanner.includes("trivy")) {
+    scannerPoints = 2; // Trivy = theoretical CVE
+    reasons.push("Trivy theoretical (+2pts)");
+  }
+  score += scannerPoints;
+
+  return {
+    score: Math.min(Math.round(score), 100),
+    reasons,
+  };
 }
 
 function priorityLabel(score) {
   if (score >= 85) return "Critical";
-  if (score >= 70) return "High";
+  if (score >= 65) return "High";
   if (score >= 40) return "Medium";
   return "Low";
 }
