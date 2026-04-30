@@ -9,6 +9,7 @@ const path = require("path");
 const fs = require("fs");
 const { callGeminiWithGrounding } = require("./vertexClient");
 const { parseZapHtmlFile } = require("./zapParser");
+const { getSecret } = require("./secretManager");
 function safeParseJSON(raw) {
   try {
     let cleaned = raw.replace(/```json|```/gi, "").trim();
@@ -1363,9 +1364,42 @@ app.get("/api/performance/:productId", async (req, res) => {
   }
 });
 
-///////////////////////////////////////////////////////
-// START SERVER
-///////////////////////////////////////////////////////
-app.listen(5000, "0.0.0.0", () => {
-  console.log("🚀 Backend running on http://0.0.0.0:5000");
+app.get("/api/test-secret-manager", async (req, res) => {
+  try {
+    const jwtSecret = await getSecret("jwt-secret");
+
+    res.json({
+      ok: true,
+      source: "secret-manager",
+      secretName: "jwt-secret",
+      length: jwtSecret.length,
+    });
+  } catch (error) {
+    console.error("Secret Manager test error:", error.message);
+    res.status(500).json({
+      ok: false,
+      error: error.message,
+    });
+  }
+});
+
+async function loadRuntimeSecrets() {
+  if (!process.env.JWT_SECRET) {
+    process.env.JWT_SECRET = await getSecret("jwt-secret");
+  }
+
+  console.log("✅ Runtime secrets loaded");
+}
+
+async function startServer() {
+  await loadRuntimeSecrets();
+
+  app.listen(5000, "0.0.0.0", () => {
+    console.log("🚀 Backend running on http://0.0.0.0:5000");
+  });
+}
+
+startServer().catch((err) => {
+  console.error("❌ Failed to start backend:", err);
+  process.exit(1);
 });
