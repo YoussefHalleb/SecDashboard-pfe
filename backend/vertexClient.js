@@ -6,7 +6,7 @@ const axios = require("axios");
 const PROJECT_ID = process.env.GCP_PROJECT_ID;
 const LOCATION = process.env.VERTEX_LOCATION || "global"; 
 const ENGINE_ID = process.env.VERTEX_ENGINE_ID;
-
+ 
 const searchClient = new SearchServiceClient();
 
 function normalizeQuery(text) {
