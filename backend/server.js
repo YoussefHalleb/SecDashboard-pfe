@@ -1363,7 +1363,24 @@ app.get("/api/performance/:productId", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch performance results" });
   }
 });
+app.get("/api/test-github-secret", async (req, res) => {
+  try {
+    const githubToken = await getSecret("github-token");
 
+    res.json({
+      ok: true,
+      source: "secret-manager",
+      secretName: "github-token",
+      length: githubToken.length,
+    });
+  } catch (error) {
+    console.error("GitHub Secret Manager test error:", error.message);
+    res.status(500).json({
+      ok: false,
+      error: error.message,
+    });
+  }
+});
 app.get("/api/test-secret-manager", async (req, res) => {
   try {
     const jwtSecret = await getSecret("jwt-secret");
@@ -1386,6 +1403,10 @@ app.get("/api/test-secret-manager", async (req, res) => {
 async function loadRuntimeSecrets() {
   if (!process.env.JWT_SECRET) {
     process.env.JWT_SECRET = await getSecret("jwt-secret");
+  }
+
+  if (!process.env.GITHUB_TOKEN) {
+    process.env.GITHUB_TOKEN = await getSecret("github-token");
   }
 
   console.log("✅ Runtime secrets loaded");
