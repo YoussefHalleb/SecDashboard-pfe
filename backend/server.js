@@ -1410,6 +1410,8 @@ async function loadRuntimeSecrets() {
   }
 
   console.log("✅ Runtime secrets loaded");
+  console.log("JWT_SECRET length:", process.env.JWT_SECRET?.length || 0);
+  console.log("GITHUB_TOKEN length:", process.env.GITHUB_TOKEN?.length || 0);
 }
 
 async function startServer() {
