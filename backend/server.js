@@ -1409,9 +1409,14 @@ async function loadRuntimeSecrets() {
     process.env.GITHUB_TOKEN = await getSecret("github-token");
   }
 
+  if (!process.env.DEFECTDOJO_API_KEY) {
+    process.env.DEFECTDOJO_API_KEY = await getSecret("defectdojo-api-key");
+  }
+
   console.log("✅ Runtime secrets loaded");
   console.log("JWT_SECRET length:", process.env.JWT_SECRET?.length || 0);
   console.log("GITHUB_TOKEN length:", process.env.GITHUB_TOKEN?.length || 0);
+  console.log("DEFECTDOJO_API_KEY length:", process.env.DEFECTDOJO_API_KEY?.length || 0);
 }
 
 async function startServer() {
