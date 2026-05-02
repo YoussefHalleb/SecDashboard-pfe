@@ -1101,31 +1101,49 @@ app.get("/api/repositories/:id/prioritized-findings", async (req, res) => {
     const productId = req.params.id;
 
     const { rows } = await pool.query(
-      `SELECT
-         f.*,
-         a.risk_analysis,
-         a.exploit_explanation,
-         a.impact,
-         a.remediation,
-         a.secure_code_example,
-         a.owasp_reference,
-         a.attack_complexity,
-         a.exploitability,
-         a.business_risk,
-         a.recommended_priority,
-         a.risk_score,
-         r.cvss_score,
-         r.ai_risk_score,
-         r.confidence,
-         r.false_positive_likelihood,
-         r.priority,
-         r.code_fix_example
-       FROM findings f
-       LEFT JOIN finding_ai_analysis a ON a.finding_id = f.id
-       LEFT JOIN finding_recommendations r ON r.finding_id = f.id AND r.status = 'proposed'
-       WHERE f.product_id = $1`,
-      [productId]
-    );
+  `SELECT
+     f.*,
+     a.risk_analysis,
+     a.exploit_explanation,
+     a.impact,
+     a.remediation,
+     a.secure_code_example,
+     a.owasp_reference,
+     a.attack_complexity,
+     a.exploitability,
+     a.business_risk,
+     a.recommended_priority,
+     a.risk_score,
+
+     r.cvss_score,
+     r.ai_risk_score,
+     r.confidence,
+     r.false_positive_likelihood,
+     r.priority,
+     r.code_fix_example,
+
+     df.developer_priority,
+     df.developer_score,
+     df.developer_reason,
+     df.is_false_positive,
+     df.accepted_risk,
+     df.created_at AS developer_feedback_at
+
+   FROM findings f
+   LEFT JOIN finding_ai_analysis a
+     ON a.finding_id = f.id
+   LEFT JOIN finding_recommendations r
+     ON r.finding_id = f.id AND r.status = 'proposed'
+   LEFT JOIN LATERAL (
+     SELECT *
+     FROM finding_developer_feedback d
+     WHERE d.finding_id = f.id
+     ORDER BY d.created_at DESC
+     LIMIT 1
+   ) df ON true
+   WHERE f.product_id = $1`,
+  [productId]
+);
 
    const prioritized = rows.map((f) => {
   const { score, reasons } = computePriorityScore(f, {
