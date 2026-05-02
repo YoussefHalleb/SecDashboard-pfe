@@ -1228,62 +1228,62 @@ app.get("/api/repositories/:id/prioritized-findings", async (req, res) => {
       [productId],
     );
 
-   const prioritized = await Promise.all(
-  rows.map(async (f) => {
-    const ruleResult = computePriorityScore(f, {
-      cvss_score: f.cvss_score,
-      exploitability: f.exploitability,
-      attack_complexity: f.attack_complexity,
-      business_risk: f.business_risk,
-      owasp_category: f.owasp_category,
-    });
+  const prioritized = [];
 
-    const ml = await predictPriorityWithML({
-      title: f.title,
-      severity: f.severity,
-      scanner: f.scanner,
-      cwe: f.cwe || "",
-      owasp_category: f.owasp_category || f.recommended_priority || "",
-      cvss_score: f.cvss_score || 0,
-      epss_score: f.epss_score || 0,
-      is_kev: f.is_kev || 0,
-      url: f.url || "",
-      evidence: f.evidence || "",
-      attack: f.attack || "",
-    });
+for (const f of rows) {
+  const ruleResult = computePriorityScore(f, {
+    cvss_score: f.cvss_score,
+    exploitability: f.exploitability,
+    attack_complexity: f.attack_complexity,
+    business_risk: f.business_risk,
+    owasp_category: f.owasp_category,
+  });
 
-    const finalScore = ml?.ml_score ?? ruleResult.score;
-    const finalLabel = ml?.ml_priority ?? priorityLabel(ruleResult.score);
+  const ml = await predictPriorityWithML({
+    title: f.title,
+    severity: f.severity,
+    scanner: f.scanner,
+    cwe: f.cwe || "",
+    owasp_category: f.owasp_category || "",
+    cvss_score: f.cvss_score || 0,
+    epss_score: f.epss_score || 0,
+    is_kev: f.is_kev || 0,
+    url: f.url || "",
+    evidence: f.evidence || "",
+    attack: f.attack || "",
+  });
 
-    const reasons = [];
+  const finalScore = ml?.ml_score ?? ruleResult.score;
+  const finalLabel = ml?.ml_priority ?? priorityLabel(ruleResult.score);
 
-    if (ml) {
-      reasons.push(`ML model prediction (${finalScore}pts)`);
-    } else {
-      reasons.push("Fallback rule-based score");
-      reasons.push(...ruleResult.reasons);
-    }
+  const reasons = [];
 
-    if (f.developer_priority) {
-      reasons.push(`Developer feedback: ${f.developer_priority}`);
-    }
+  if (ml) {
+    reasons.push(`ML model prediction (${finalScore}pts)`);
+  } else {
+    reasons.push("Fallback rule-based score");
+    reasons.push(...ruleResult.reasons);
+  }
 
-    return {
-      ...f,
+  if (f.developer_priority) {
+    reasons.push(`Developer feedback: ${f.developer_priority}`);
+  }
 
-      rule_score: ruleResult.score,
-      rule_label: priorityLabel(ruleResult.score),
-      rule_reasons: ruleResult.reasons,
+  prioritized.push({
+    ...f,
 
-      ml_score: finalScore,
-      ml_priority: finalLabel,
+    rule_score: ruleResult.score,
+    rule_label: priorityLabel(ruleResult.score),
+    rule_reasons: ruleResult.reasons,
 
-      priority_score: finalScore,
-      priority_label: finalLabel,
-      priority_reasons: reasons,
-    };
-  })
-);
+    ml_score: finalScore,
+    ml_priority: finalLabel,
+
+    priority_score: finalScore,
+    priority_label: finalLabel,
+    priority_reasons: reasons,
+  });
+}
 
     prioritized.sort((a, b) => b.priority_score - a.priority_score);
 
