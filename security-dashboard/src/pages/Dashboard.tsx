@@ -46,6 +46,8 @@ export default function Dashboard() {
   const [aiSource, setAiSource] = useState<"" | "generated" | "database">("");
   const [perfResults, setPerfResults] = useState<any[]>([]);
   const [loadingPerf, setLoadingPerf] = useState(false);
+  const [savingFeedbackId, setSavingFeedbackId] = useState<number | null>(null);
+  const [feedbackMessage, setFeedbackMessage] = useState<string>("");
 
   const handleLogout = async () => {
     try {
@@ -108,6 +110,60 @@ export default function Dashboard() {
     }
   };
 
+  const saveDeveloperPriority = async (
+  finding: any,
+  developerPriority: string,
+) => {
+  if (!selectedRepo) return;
+
+  const scoreMap: Record<string, number> = {
+    Critical: 95,
+    High: 75,
+    Medium: 50,
+    Low: 25,
+    "False Positive": 0,
+    "Accepted Risk": 10,
+  };
+
+  setSavingFeedbackId(finding.id);
+  setFeedbackMessage("");
+
+  try {
+    await api.post(`/api/findings/${finding.id}/feedback`, {
+      product_id: selectedRepo.id,
+      scanner_severity: finding.severity,
+      scanner: finding.scanner,
+      system_priority: finding.priority_label,
+      system_score: finding.priority_score,
+      developer_priority: developerPriority,
+      developer_score: scoreMap[developerPriority],
+      developer_reason: "",
+      is_false_positive: developerPriority === "False Positive",
+      accepted_risk: developerPriority === "Accepted Risk",
+    });
+
+    setPrioritizedFindings((prev) =>
+      prev.map((item) =>
+        item.id === finding.id
+          ? {
+              ...item,
+              developer_priority: developerPriority,
+              developer_score: scoreMap[developerPriority],
+            }
+          : item,
+      ),
+    );
+
+    setFeedbackMessage(`Developer priority saved for #${finding.id}`);
+  } catch (e) {
+    console.error(e);
+    setFeedbackMessage("Failed to save developer priority");
+    alert("Failed to save developer priority");
+  } finally {
+    setSavingFeedbackId(null);
+  }
+};
+  
   const deleteRepo = async (repoId: number) => {
     if (!confirm("Supprimer ce repository et toutes ses données ?")) return;
     try {
@@ -363,16 +419,26 @@ export default function Dashboard() {
 
             {/* Modal Body — scrollable */}
             <div className="overflow-y-auto flex-1 p-6 space-y-5">
-
+            {!!feedbackMessage && (
+  <div
+    className={`text-xs px-4 py-2.5 rounded-xl border ${
+      feedbackMessage.includes("Failed")
+        ? "bg-red-500/10 border-red-500/20 text-red-400"
+        : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+    }`}
+  >
+    {feedbackMessage}
+  </div>
+)}
               {/* 🔥 AI PRIORITIZATION — multi-criteria model */}
               {prioritizedFindings.length > 0 && (
                 <div className="bg-slate-800/50 border border-purple-500/20 rounded-xl p-4">
                   <div className="flex items-center justify-between mb-1">
-                    <h3 className="text-sm font-bold text-purple-400">🔥 AI Prioritized Vulnerabilities</h3>
+                    <h3 className="text-sm font-bold text-purple-400">🔥 Adaptive Prioritized Vulnerabilities</h3>
                     <span className="text-xs text-slate-500">Score /100 · CVSS·Exploit·Business·Evidence·OWASP·URL·Scanner</span>
                   </div>
                   <p className="text-xs text-slate-500 mb-4">
-                    Multi-criteria model: CVSS (30pts) + Exploitability (20pts) + Business Impact (15pts) + Evidence (15pts) + OWASP (10pts) + Sensitive URL (5pts) + Scanner (5pts)
+                    Initial score from AI/rules. Developer feedback will be stored and used to train the adaptive prioritization model. + Scanner (5pts)
                   </p>
 
                   <div className="space-y-2">
@@ -431,6 +497,46 @@ export default function Dashboard() {
                             ))}
                           </div>
                         )}
+                        <div className="mt-3 pt-3 border-t border-slate-700/50">
+  <div className="flex items-center justify-between gap-3 mb-2">
+    <span className="text-xs font-semibold text-slate-400">
+      Developer priority
+    </span>
+
+    {f.developer_priority && (
+      <span className="text-xs bg-blue-500/10 border border-blue-500/30 text-blue-400 px-2 py-0.5 rounded-full">
+        Saved: {f.developer_priority}
+      </span>
+    )}
+  </div>
+
+  <div className="flex flex-wrap gap-1.5">
+    {["Critical", "High", "Medium", "Low", "False Positive", "Accepted Risk"].map(
+      (priority) => (
+        <button
+          key={priority}
+          disabled={savingFeedbackId === f.id}
+          onClick={() => saveDeveloperPriority(f, priority)}
+          className={`text-xs font-semibold px-2 py-1 rounded-lg border transition disabled:opacity-50 ${
+            f.developer_priority === priority
+              ? "bg-blue-500/20 border-blue-500/40 text-blue-300"
+              : priority === "Critical"
+              ? "bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20"
+              : priority === "High"
+              ? "bg-orange-500/10 border-orange-500/30 text-orange-400 hover:bg-orange-500/20"
+              : priority === "Medium"
+              ? "bg-yellow-500/10 border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/20"
+              : priority === "Low"
+              ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
+              : "bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600"
+          }`}
+        >
+          {savingFeedbackId === f.id ? "Saving..." : priority}
+        </button>
+      ),
+    )}
+  </div>
+</div>
                       </div>
                     ))}
                   </div>
