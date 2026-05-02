@@ -549,6 +549,119 @@ if (!parsed) {
     return res.status(500).json({ error: "AI from ZAP failed" });
   }
 });
+
+app.post("/api/findings/:id/feedback", authMiddleware, async (req, res) => {
+  try {
+    const findingId = Number(req.params.id);
+    const userId = req.user.sub;
+
+    const {
+      product_id,
+      scanner_severity,
+      scanner,
+      system_priority,
+      system_score,
+      developer_priority,
+      developer_score,
+      developer_reason,
+      is_false_positive,
+      accepted_risk,
+    } = req.body;
+
+    if (!findingId) {
+      return res.status(400).json({ error: "Invalid finding id" });
+    }
+
+    if (!developer_priority) {
+      return res.status(400).json({ error: "developer_priority is required" });
+    }
+
+    const scoreMap = {
+      Critical: 95,
+      High: 75,
+      Medium: 50,
+      Low: 25,
+      "False Positive": 0,
+      "Accepted Risk": 10,
+    };
+
+   const finalDeveloperScore =
+  developer_score !== undefined && developer_score !== null
+    ? Number(developer_score)
+    : scoreMap[developer_priority] ?? 0;
+
+    const result = await pool.query(
+      `
+      INSERT INTO finding_developer_feedback (
+        finding_id,
+        product_id,
+        user_id,
+        scanner_severity,
+        scanner,
+        system_priority,
+        system_score,
+        developer_priority,
+        developer_score,
+        developer_action,
+        developer_reason,
+        is_false_positive,
+        accepted_risk
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+      RETURNING *
+      `,
+      [
+        findingId,
+        product_id || null,
+        userId,
+        scanner_severity || null,
+        scanner || null,
+        system_priority || null,
+        system_score || null,
+        developer_priority,
+        finalDeveloperScore,
+        "priority_changed",
+        developer_reason || "",
+        is_false_positive || developer_priority === "False Positive",
+        accepted_risk || developer_priority === "Accepted Risk",
+      ],
+    );
+
+    res.json({
+      success: true,
+      feedback: result.rows[0],
+    });
+  } catch (error) {
+    console.error("Developer feedback error:", error.message);
+    res.status(500).json({ error: "Failed to save developer feedback" });
+  }
+});
+
+
+
+app.get("/api/findings/:id/feedback/latest", authMiddleware, async (req, res) => {
+  try {
+    const findingId = Number(req.params.id);
+
+    const { rows } = await pool.query(
+      `
+      SELECT *
+      FROM finding_developer_feedback
+      WHERE finding_id = $1
+      ORDER BY created_at DESC
+      LIMIT 1
+      `,
+      [findingId],
+    );
+
+    res.json(rows[0] || null);
+  } catch (error) {
+    console.error("Get latest developer feedback error:", error.message);
+    res.status(500).json({ error: "Failed to fetch developer feedback" });
+  }
+});
+
+
 ///////////////////////////////////////////////////////
 // AI RECOMMENDATIONS (Groq) + STORE SOLUTION IN DB
 ///////////////////////////////////////////////////////
