@@ -1141,6 +1141,43 @@ app.get("/api/findings/:id/ai-analysis", async (req, res) => {
   }
 });
 
+function predictPriorityWithML(finding) {
+  return new Promise((resolve) => {
+    const python = spawn("python", ["predict_priority.py"], {
+      cwd: __dirname,
+    });
+
+    let output = "";
+    let errorOutput = "";
+
+    python.stdout.on("data", (data) => {
+      output += data.toString();
+    });
+
+    python.stderr.on("data", (data) => {
+      errorOutput += data.toString();
+    });
+
+    python.stdin.write(JSON.stringify(finding));
+    python.stdin.end();
+
+    python.on("close", (code) => {
+      if (code !== 0) {
+        console.error("ML prediction failed:", errorOutput);
+        return resolve(null);
+      }
+
+      try {
+        return resolve(JSON.parse(output));
+      } catch (e) {
+        console.error("Invalid ML output:", output);
+        return resolve(null);
+      }
+    });
+  });
+}
+
+
 app.get("/api/repositories/:id/prioritized-findings", async (req, res) => {
   try {
     const productId = req.params.id;
@@ -1164,8 +1201,9 @@ app.get("/api/repositories/:id/prioritized-findings", async (req, res) => {
      r.ai_risk_score,
      r.confidence,
      r.false_positive_likelihood,
-     r.priority,
-     r.code_fix_example,
+    r.priority,
+    r.owasp_category,
+    r.code_fix_example,
 
      df.developer_priority,
      df.developer_score,
@@ -1190,22 +1228,62 @@ app.get("/api/repositories/:id/prioritized-findings", async (req, res) => {
       [productId],
     );
 
-    const prioritized = rows.map((f) => {
-      const { score, reasons } = computePriorityScore(f, {
-        cvss_score: f.cvss_score,
-        exploitability: f.exploitability,
-        attack_complexity: f.attack_complexity,
-        business_risk: f.business_risk,
-        owasp_category: f.owasp_category,
-      });
-
-      return {
-        ...f,
-        priority_score: score,
-        priority_label: priorityLabel(score),
-        priority_reasons: reasons,
-      };
+   const prioritized = await Promise.all(
+  rows.map(async (f) => {
+    const ruleResult = computePriorityScore(f, {
+      cvss_score: f.cvss_score,
+      exploitability: f.exploitability,
+      attack_complexity: f.attack_complexity,
+      business_risk: f.business_risk,
+      owasp_category: f.owasp_category,
     });
+
+    const ml = await predictPriorityWithML({
+      title: f.title,
+      severity: f.severity,
+      scanner: f.scanner,
+      cwe: f.cwe || "",
+      owasp_category: f.owasp_category || f.recommended_priority || "",
+      cvss_score: f.cvss_score || 0,
+      epss_score: f.epss_score || 0,
+      is_kev: f.is_kev || 0,
+      url: f.url || "",
+      evidence: f.evidence || "",
+      attack: f.attack || "",
+    });
+
+    const finalScore = ml?.ml_score ?? ruleResult.score;
+    const finalLabel = ml?.ml_priority ?? priorityLabel(ruleResult.score);
+
+    const reasons = [];
+
+    if (ml) {
+      reasons.push(`ML model prediction (${finalScore}pts)`);
+    } else {
+      reasons.push("Fallback rule-based score");
+      reasons.push(...ruleResult.reasons);
+    }
+
+    if (f.developer_priority) {
+      reasons.push(`Developer feedback: ${f.developer_priority}`);
+    }
+
+    return {
+      ...f,
+
+      rule_score: ruleResult.score,
+      rule_label: priorityLabel(ruleResult.score),
+      rule_reasons: ruleResult.reasons,
+
+      ml_score: finalScore,
+      ml_priority: finalLabel,
+
+      priority_score: finalScore,
+      priority_label: finalLabel,
+      priority_reasons: reasons,
+    };
+  })
+);
 
     prioritized.sort((a, b) => b.priority_score - a.priority_score);
 
