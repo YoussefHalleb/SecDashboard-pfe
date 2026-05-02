@@ -7,6 +7,7 @@ const pool = require("./db");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const { spawn } = require("child_process");
 const { callGeminiWithGrounding } = require("./vertexClient");
 const { parseZapHtmlFile } = require("./zapParser");
 const { getSecret } = require("./secretManager");
@@ -133,12 +134,12 @@ app.post("/auth/register", async (req, res) => {
     const user = result.rows[0];
     const token = signToken(user);
 
-   res.cookie("token", token, {
-  httpOnly: true,
-  sameSite: "lax",   // ✅ cohérent
-  secure: true,      // ✅ tu es en HTTPS avec cert-manager
-  maxAge: 7 * 24 * 3600 * 1000,
-});
+    res.cookie("token", token, {
+      httpOnly: true,
+      sameSite: "lax", // ✅ cohérent
+      secure: true, // ✅ tu es en HTTPS avec cert-manager
+      maxAge: 7 * 24 * 3600 * 1000,
+    });
 
     res.json(user);
   } catch (err) {
@@ -170,12 +171,12 @@ app.post("/auth/login", async (req, res) => {
 
     const token = signToken(user);
 
-   res.cookie("token", token, {
-  httpOnly: true,
-  sameSite: "lax",   // ✅ cohérent
-  secure: true,      // ✅ tu es en HTTPS avec cert-manager
-  maxAge: 7 * 24 * 3600 * 1000,
-});
+    res.cookie("token", token, {
+      httpOnly: true,
+      sameSite: "lax", // ✅ cohérent
+      secure: true, // ✅ tu es en HTTPS avec cert-manager
+      maxAge: 7 * 24 * 3600 * 1000,
+    });
 
     res.json({ id: user.id, email: user.email });
   } catch (err) {
@@ -533,12 +534,11 @@ ${JSON.stringify(selected, null, 2)}
 
     const { raw } = await callGeminiWithGrounding(prompt);
 
-   
-   const parsed = safeParseJSON(raw);
+    const parsed = safeParseJSON(raw);
 
-if (!parsed) {
-  throw new Error("Invalid JSON from AI");
-}
+    if (!parsed) {
+      throw new Error("Invalid JSON from AI");
+    }
 
     return res.json({
       parsed_findings_count: findings.length,
@@ -585,10 +585,10 @@ app.post("/api/findings/:id/feedback", authMiddleware, async (req, res) => {
       "Accepted Risk": 10,
     };
 
-   const finalDeveloperScore =
-  developer_score !== undefined && developer_score !== null
-    ? Number(developer_score)
-    : scoreMap[developer_priority] ?? 0;
+    const finalDeveloperScore =
+      developer_score !== undefined && developer_score !== null
+        ? Number(developer_score)
+        : (scoreMap[developer_priority] ?? 0);
 
     const result = await pool.query(
       `
@@ -637,31 +637,79 @@ app.post("/api/findings/:id/feedback", authMiddleware, async (req, res) => {
   }
 });
 
+app.get(
+  "/api/findings/:id/feedback/latest",
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const findingId = Number(req.params.id);
 
-
-app.get("/api/findings/:id/feedback/latest", authMiddleware, async (req, res) => {
-  try {
-    const findingId = Number(req.params.id);
-
-    const { rows } = await pool.query(
-      `
+      const { rows } = await pool.query(
+        `
       SELECT *
       FROM finding_developer_feedback
       WHERE finding_id = $1
       ORDER BY created_at DESC
       LIMIT 1
       `,
-      [findingId],
-    );
+        [findingId],
+      );
 
-    res.json(rows[0] || null);
+      res.json(rows[0] || null);
+    } catch (error) {
+      console.error("Get latest developer feedback error:", error.message);
+      res.status(500).json({ error: "Failed to fetch developer feedback" });
+    }
+  },
+);
+
+app.post("/api/ml/predict-priority", async (req, res) => {
+  try {
+    const finding = req.body;
+
+    const python = spawn("python", ["predict_priority.py"], {
+      cwd: __dirname,
+    });
+
+    let output = "";
+    let errorOutput = "";
+
+    python.stdout.on("data", (data) => {
+      output += data.toString();
+    });
+
+    python.stderr.on("data", (data) => {
+      errorOutput += data.toString();
+    });
+
+    python.stdin.write(JSON.stringify(finding));
+    python.stdin.end();
+
+    python.on("close", (code) => {
+      if (code !== 0) {
+        console.error("ML prediction error:", errorOutput);
+        return res.status(500).json({
+          error: "ML prediction failed",
+          details: errorOutput,
+        });
+      }
+
+      try {
+        const result = JSON.parse(output);
+        return res.json(result);
+      } catch (e) {
+        console.error("Invalid ML output:", output);
+        return res.status(500).json({
+          error: "Invalid ML output",
+          raw: output,
+        });
+      }
+    });
   } catch (error) {
-    console.error("Get latest developer feedback error:", error.message);
-    res.status(500).json({ error: "Failed to fetch developer feedback" });
+    console.error("Predict priority endpoint error:", error.message);
+    res.status(500).json({ error: "Prediction failed" });
   }
 });
-
-
 ///////////////////////////////////////////////////////
 // AI RECOMMENDATIONS (Groq) + STORE SOLUTION IN DB
 ///////////////////////////////////////////////////////
@@ -827,15 +875,13 @@ Findings JSON:
 ${JSON.stringify(summary, null, 2)}
 `;
 
-   const { raw } = await callGeminiWithGrounding(prompt);
-
-   
+    const { raw } = await callGeminiWithGrounding(prompt);
 
     const parsed = safeParseJSON(raw);
 
-if (!parsed) {
-  throw new Error("Invalid JSON from AI");
-}
+    if (!parsed) {
+      throw new Error("Invalid JSON from AI");
+    }
 
     const items = Array.isArray(parsed.items) ? parsed.items : [];
     const saved = [];
@@ -994,12 +1040,11 @@ ${JSON.stringify(summary, null, 2)}
 
     const { raw } = await callGeminiWithGrounding(prompt);
 
-    
-  const parsed = safeParseJSON(raw);
+    const parsed = safeParseJSON(raw);
 
-if (!parsed) {
-  throw new Error("Invalid JSON from AI");
-}
+    if (!parsed) {
+      throw new Error("Invalid JSON from AI");
+    }
 
     const items = Array.isArray(parsed.items) ? parsed.items : [];
 
@@ -1101,7 +1146,7 @@ app.get("/api/repositories/:id/prioritized-findings", async (req, res) => {
     const productId = req.params.id;
 
     const { rows } = await pool.query(
-  `SELECT
+      `SELECT
      f.*,
      a.risk_analysis,
      a.exploit_explanation,
@@ -1142,40 +1187,34 @@ app.get("/api/repositories/:id/prioritized-findings", async (req, res) => {
      LIMIT 1
    ) df ON true
    WHERE f.product_id = $1`,
-  [productId]
-);
+      [productId],
+    );
 
-   const prioritized = rows.map((f) => {
-  const { score, reasons } = computePriorityScore(f, {
-    cvss_score: f.cvss_score,
-    exploitability: f.exploitability,
-    attack_complexity: f.attack_complexity,
-    business_risk: f.business_risk,
-    owasp_category: f.owasp_category,
-  });
+    const prioritized = rows.map((f) => {
+      const { score, reasons } = computePriorityScore(f, {
+        cvss_score: f.cvss_score,
+        exploitability: f.exploitability,
+        attack_complexity: f.attack_complexity,
+        business_risk: f.business_risk,
+        owasp_category: f.owasp_category,
+      });
 
-  return {
-    ...f,
-    priority_score: score,
-    priority_label: priorityLabel(score),
-    priority_reasons: reasons,
-  };
-});
+      return {
+        ...f,
+        priority_score: score,
+        priority_label: priorityLabel(score),
+        priority_reasons: reasons,
+      };
+    });
 
     prioritized.sort((a, b) => b.priority_score - a.priority_score);
 
+    const unique = Array.from(
+      new Map(prioritized.map((f) => [`${f.title}-${f.scanner}`, f])).values(),
+    );
 
-const unique = Array.from(
-  new Map(
-    prioritized.map((f) => [
-      `${f.title}-${f.scanner}`,
-      f,
-    ])
-  ).values()
-);
-
-// 3. Retourner seulement les findings uniques
-res.json(unique);
+    // 3. Retourner seulement les findings uniques
+    res.json(unique);
   } catch (error) {
     console.error(error.message);
     res.status(500).json({ error: "Failed to fetch prioritized findings" });
@@ -1196,38 +1235,61 @@ function computePriorityScore(finding, ai = {}) {
   const exploitVal = ai.exploitability || ai.attack_complexity || "";
   const exploitPoints = exploitMap[exploitVal] || 0;
   score += exploitPoints;
-  if (exploitPoints > 0) reasons.push(`Exploitability ${exploitVal} (+${exploitPoints}pts)`);
+  if (exploitPoints > 0)
+    reasons.push(`Exploitability ${exploitVal} (+${exploitPoints}pts)`);
 
   // ─── 3. Business Impact (15 pts) ─────────────────
   const businessMap = { High: 15, Medium: 8, Low: 3 };
   const businessPoints = businessMap[ai.business_risk] || 0;
   score += businessPoints;
-  if (businessPoints > 0) reasons.push(`Business risk ${ai.business_risk} (+${businessPoints}pts)`);
+  if (businessPoints > 0)
+    reasons.push(`Business risk ${ai.business_risk} (+${businessPoints}pts)`);
 
   // ─── 4. Evidence / Attack proof (15 pts) ─────────
   let evidencePoints = 0;
-  if (finding.evidence) { evidencePoints = 15; reasons.push("Evidence confirmed (+15pts)"); }
-  else if (finding.attack) { evidencePoints = 10; reasons.push("Attack vector present (+10pts)"); }
-  else if (finding.description) { evidencePoints = 5; reasons.push("Description only (+5pts)"); }
+  if (finding.evidence) {
+    evidencePoints = 15;
+    reasons.push("Evidence confirmed (+15pts)");
+  } else if (finding.attack) {
+    evidencePoints = 10;
+    reasons.push("Attack vector present (+10pts)");
+  } else if (finding.description) {
+    evidencePoints = 5;
+    reasons.push("Description only (+5pts)");
+  }
   score += evidencePoints;
 
   // ─── 5. OWASP Category (10 pts) ──────────────────
-  const owasp = (ai.owasp_category || finding.owasp_category || "").toUpperCase();
+  const owasp = (
+    ai.owasp_category ||
+    finding.owasp_category ||
+    ""
+  ).toUpperCase();
   let owaspPoints = 0;
   if (owasp.includes("A01") || owasp.includes("A02") || owasp.includes("A03")) {
     owaspPoints = 10;
-  } else if (owasp.includes("A04") || owasp.includes("A05") || owasp.includes("A06")) {
+  } else if (
+    owasp.includes("A04") ||
+    owasp.includes("A05") ||
+    owasp.includes("A06")
+  ) {
     owaspPoints = 7;
   } else if (owasp) {
     owaspPoints = 3;
   }
   score += owaspPoints;
-  if (owaspPoints > 0) reasons.push(`OWASP ${owasp.slice(0,3)} (+${owaspPoints}pts)`);
+  if (owaspPoints > 0)
+    reasons.push(`OWASP ${owasp.slice(0, 3)} (+${owaspPoints}pts)`);
 
   // ─── 6. URL sensible (5 pts) ─────────────────────
   const url = (finding.url || "").toLowerCase();
   let urlPoints = 0;
-  if (url.includes("admin") || url.includes("login") || url.includes("payment") || url.includes("auth")) {
+  if (
+    url.includes("admin") ||
+    url.includes("login") ||
+    url.includes("payment") ||
+    url.includes("auth")
+  ) {
     urlPoints = 5;
   } else if (url.includes("api") || url.includes("user")) {
     urlPoints = 3;
@@ -1547,7 +1609,10 @@ async function loadRuntimeSecrets() {
   console.log("✅ Runtime secrets loaded");
   console.log("JWT_SECRET length:", process.env.JWT_SECRET?.length || 0);
   console.log("GITHUB_TOKEN length:", process.env.GITHUB_TOKEN?.length || 0);
-  console.log("DEFECTDOJO_API_KEY length:", process.env.DEFECTDOJO_API_KEY?.length || 0);
+  console.log(
+    "DEFECTDOJO_API_KEY length:",
+    process.env.DEFECTDOJO_API_KEY?.length || 0,
+  );
 }
 
 async function startServer() {
