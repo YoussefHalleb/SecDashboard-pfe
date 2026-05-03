@@ -442,6 +442,76 @@ app.get("/api/products/:id/zap-findings", async (req, res) => {
     res.status(500).json({ error: "Failed to parse ZAP report" });
   }
 });
+
+app.post("/api/products/:id/sync-zap-fields", async (req, res) => {
+  try {
+    const productId = req.params.id;
+
+    const { rows } = await pool.query(
+      `SELECT id, name, zap_report_path
+       FROM products
+       WHERE id = $1`,
+      [productId],
+    );
+
+    const product = rows[0];
+
+    if (!product?.zap_report_path) {
+      return res.status(404).json({ error: "No ZAP report found" });
+    }
+
+    const fullPath = path.resolve(__dirname, product.zap_report_path);
+    const zapFindings = parseZapHtmlFile(fullPath);
+
+    let updated = 0;
+
+    for (const z of zapFindings) {
+      const result = await pool.query(
+        `
+        UPDATE findings
+        SET
+          url = COALESCE($1, url),
+          method = COALESCE($2, method),
+          parameter = COALESCE($3, parameter),
+          attack = COALESCE($4, attack),
+          evidence = COALESCE($5, evidence),
+          solution = COALESCE($6, solution),
+          reference = COALESCE($7, reference),
+          cwe = COALESCE($8, cwe),
+          plugin_id = COALESCE($9, plugin_id)
+        WHERE product_id = $10
+          AND LOWER(TRIM(title)) = LOWER(TRIM($11))
+          AND scanner ILIKE '%ZAP%'
+        `,
+        [
+          z.url || null,
+          z.method || null,
+          z.parameter || null,
+          z.attack || null,
+          z.evidence || null,
+          z.solution || null,
+          z.reference || null,
+          z.cwe ? String(z.cwe) : null,
+          z.plugin_id ? String(z.plugin_id) : null,
+          productId,
+          z.title,
+        ],
+      );
+
+      updated += result.rowCount;
+    }
+
+    res.json({
+      success: true,
+      parsed: zapFindings.length,
+      updated,
+    });
+  } catch (error) {
+    console.error("Sync ZAP fields error:", error.message);
+    res.status(500).json({ error: "Failed to sync ZAP fields" });
+  }
+});
+
 app.delete("/api/products/:id", async (req, res) => {
   const productId = req.params.id;
   const client = await pool.connect();
