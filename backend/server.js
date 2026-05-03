@@ -1141,9 +1141,9 @@ app.get("/api/findings/:id/ai-analysis", async (req, res) => {
   }
 });
 
-function predictPriorityWithML(finding) {
+function predictPriorityBatchWithML(findings) {
   return new Promise((resolve) => {
-    const python = spawn("python", ["predict_priority.py"], {
+    const python = spawn("python", ["predict_priority_batch.py"], {
       cwd: __dirname,
     });
 
@@ -1158,20 +1158,20 @@ function predictPriorityWithML(finding) {
       errorOutput += data.toString();
     });
 
-    python.stdin.write(JSON.stringify(finding));
+    python.stdin.write(JSON.stringify(findings));
     python.stdin.end();
 
     python.on("close", (code) => {
       if (code !== 0) {
-        console.error("ML prediction failed:", errorOutput);
-        return resolve(null);
+        console.error("ML batch prediction failed:", errorOutput);
+        return resolve([]);
       }
 
       try {
         return resolve(JSON.parse(output));
       } catch (e) {
-        console.error("Invalid ML output:", output);
-        return resolve(null);
+        console.error("Invalid ML batch output:", output);
+        return resolve([]);
       }
     });
   });
@@ -1183,118 +1183,129 @@ app.get("/api/repositories/:id/prioritized-findings", async (req, res) => {
     const productId = req.params.id;
 
     const { rows } = await pool.query(
-      `SELECT
-     f.*,
-     a.risk_analysis,
-     a.exploit_explanation,
-     a.impact,
-     a.remediation,
-     a.secure_code_example,
-     a.owasp_reference,
-     a.attack_complexity,
-     a.exploitability,
-     a.business_risk,
-     a.recommended_priority,
-     a.risk_score,
+      `
+      SELECT
+        f.*,
 
-     r.cvss_score,
-     r.ai_risk_score,
-     r.confidence,
-     r.false_positive_likelihood,
-    r.priority,
-    r.owasp_category,
-    r.code_fix_example,
+        a.risk_analysis,
+        a.exploit_explanation,
+        a.impact,
+        a.remediation,
+        a.secure_code_example,
+        a.owasp_reference,
+        a.attack_complexity,
+        a.exploitability,
+        a.business_risk,
+        a.recommended_priority,
+        a.risk_score,
 
-     df.developer_priority,
-     df.developer_score,
-     df.developer_reason,
-     df.is_false_positive,
-     df.accepted_risk,
-     df.created_at AS developer_feedback_at
+        r.cvss_score,
+        r.ai_risk_score,
+        r.confidence,
+        r.false_positive_likelihood,
+        r.priority,
+        r.owasp_category,
+        r.code_fix_example,
 
-   FROM findings f
-   LEFT JOIN finding_ai_analysis a
-     ON a.finding_id = f.id
-   LEFT JOIN finding_recommendations r
-     ON r.finding_id = f.id AND r.status = 'proposed'
-   LEFT JOIN LATERAL (
-     SELECT *
-     FROM finding_developer_feedback d
-     WHERE d.finding_id = f.id
-     ORDER BY d.created_at DESC
-     LIMIT 1
-   ) df ON true
-   WHERE f.product_id = $1`,
+        df.developer_priority,
+        df.developer_score,
+        df.developer_reason,
+        df.is_false_positive,
+        df.accepted_risk,
+        df.created_at AS developer_feedback_at
+
+      FROM findings f
+      LEFT JOIN finding_ai_analysis a
+        ON a.finding_id = f.id
+      LEFT JOIN finding_recommendations r
+        ON r.finding_id = f.id AND r.status = 'proposed'
+      LEFT JOIN LATERAL (
+        SELECT *
+        FROM finding_developer_feedback d
+        WHERE d.finding_id = f.id
+        ORDER BY d.created_at DESC
+        LIMIT 1
+      ) df ON true
+      WHERE f.product_id = $1
+      `,
       [productId],
     );
 
-  const prioritized = [];
+    const mlInput = rows.map((f) => ({
+      id: f.id,
+      title: f.title,
+      severity: f.severity,
+      scanner: f.scanner,
+      cwe: f.cwe || "",
+      owasp_category: f.owasp_category || "",
+      cvss_score: f.cvss_score || 0,
+      epss_score: f.epss_score || 0,
+      is_kev: f.is_kev || 0,
+      url: f.url || "",
+      evidence: f.evidence || "",
+      attack: f.attack || "",
+    }));
 
-for (const f of rows) {
-  const ruleResult = computePriorityScore(f, {
-    cvss_score: f.cvss_score,
-    exploitability: f.exploitability,
-    attack_complexity: f.attack_complexity,
-    business_risk: f.business_risk,
-    owasp_category: f.owasp_category,
-  });
+    const mlResults = await predictPriorityBatchWithML(mlInput);
 
-  const ml = await predictPriorityWithML({
-    title: f.title,
-    severity: f.severity,
-    scanner: f.scanner,
-    cwe: f.cwe || "",
-    owasp_category: f.owasp_category || "",
-    cvss_score: f.cvss_score || 0,
-    epss_score: f.epss_score || 0,
-    is_kev: f.is_kev || 0,
-    url: f.url || "",
-    evidence: f.evidence || "",
-    attack: f.attack || "",
-  });
+    const mlMap = new Map(
+      mlResults.map((item) => [Number(item.id), item])
+    );
 
-  const finalScore = ml?.ml_score ?? ruleResult.score;
-  const finalLabel = ml?.ml_priority ?? priorityLabel(ruleResult.score);
+    const prioritized = rows.map((f) => {
+      const ruleResult = computePriorityScore(f, {
+        cvss_score: f.cvss_score,
+        exploitability: f.exploitability,
+        attack_complexity: f.attack_complexity,
+        business_risk: f.business_risk,
+        owasp_category: f.owasp_category,
+      });
 
-  const reasons = [];
+      const ml = mlMap.get(Number(f.id));
 
-  if (ml) {
-    reasons.push(`ML model prediction (${finalScore}pts)`);
-  } else {
-    reasons.push("Fallback rule-based score");
-    reasons.push(...ruleResult.reasons);
-  }
+      const finalScore = ml?.ml_score ?? ruleResult.score;
+      const finalLabel = ml?.ml_priority ?? priorityLabel(ruleResult.score);
 
-  if (f.developer_priority) {
-    reasons.push(`Developer feedback: ${f.developer_priority}`);
-  }
+      const reasons = [];
 
-  prioritized.push({
-    ...f,
+      if (ml) {
+        reasons.push(`ML batch model prediction (${finalScore}pts)`);
+      } else {
+        reasons.push("Fallback rule-based score");
+        reasons.push(...ruleResult.reasons);
+      }
 
-    rule_score: ruleResult.score,
-    rule_label: priorityLabel(ruleResult.score),
-    rule_reasons: ruleResult.reasons,
+      if (f.developer_priority) {
+        reasons.push(`Developer feedback: ${f.developer_priority}`);
+      }
 
-    ml_score: finalScore,
-    ml_priority: finalLabel,
+      return {
+        ...f,
 
-    priority_score: finalScore,
-    priority_label: finalLabel,
-    priority_reasons: reasons,
-  });
-}
+        rule_score: ruleResult.score,
+        rule_label: priorityLabel(ruleResult.score),
+        rule_reasons: ruleResult.reasons,
+
+        ml_score: finalScore,
+        ml_priority: finalLabel,
+
+        priority_score: finalScore,
+        priority_label: finalLabel,
+        priority_reasons: reasons,
+      };
+    });
 
     prioritized.sort((a, b) => b.priority_score - a.priority_score);
 
     const unique = Array.from(
-      new Map(prioritized.map((f) => [`${f.title}-${f.scanner}`, f])).values(),
+      new Map(
+        prioritized.map((f) => [`${f.title}-${f.scanner}`, f])
+      ).values(),
     );
 
-    // 3. Retourner seulement les findings uniques
     res.json(unique);
   } catch (error) {
-    console.error(error.message);
+    console.error("Prioritized findings error:", error.message);
     res.status(500).json({ error: "Failed to fetch prioritized findings" });
   }
 });
