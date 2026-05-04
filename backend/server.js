@@ -1456,49 +1456,10 @@ ${JSON.stringify(batch, null, 2)}
     allRanking.push(...batchRanking);
   }
 
-  const finalPrompt = `
-You are a senior Application Security Engineer.
-
-You will receive ranked findings from multiple batches.
-Merge them into ONE final global ranking from most urgent to least urgent.
-
-Do NOT calculate numeric scores.
-Use the priority_label and reason to compare them.
-
-Return ONLY valid JSON:
-
-{
-  "ordered_items": [
-    {
-      "finding_id": number,
-      "rank": number,
-      "priority_label": "Critical|High|Medium|Low",
-      "reason": string
-    }
-  ]
-}
-
-Rules:
-- Include every finding_id exactly once.
-- rank starts at 1 globally.
-- No markdown.
-- No text outside JSON.
-
-Product / Repository: ${product.name}
-
-Batch rankings:
-${JSON.stringify(allRanking, null, 2)}
-`;
-
-  const { raw } = await callGeminiWithGrounding(finalPrompt);
-  const parsed = safeParseJSON(raw);
-
-  return Array.isArray(parsed.ordered_items)
-    ? parsed.ordered_items
-    : allRanking.map((item, index) => ({
-        ...item,
-        rank: index + 1,
-      }));
+return allRanking.map((item, index) => ({
+  ...item,
+  rank: index + 1,
+}));
 }
 app.get("/api/repositories/:id/ai-rank-findings", async (req, res) => {
   try {
@@ -1535,7 +1496,7 @@ app.get("/api/repositories/:id/ai-rank-findings", async (req, res) => {
       });
     }
 
-    const aiRanking = await rankFindingsWithVertex(product, findings);
+    const aiRanking = await rankFindingsWithVertex(product, findings.slice(0, 30));
 
     const rankMap = new Map(
       aiRanking.map((item) => [
