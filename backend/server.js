@@ -1246,8 +1246,144 @@ function predictPriorityBatchWithML(findings) {
     });
   });
 }
+async function rankFindingsWithVertex(product, findings) {
+  const selected = findings.slice(0, 30).map((f) => ({
+    finding_id: f.id,
+    title: f.title,
+    severity: f.severity,
+    scanner: f.scanner,
+    description: f.description || "",
+    url: f.url || "",
+    method: f.method || "",
+    parameter: f.parameter || "",
+    evidence: f.evidence || "",
+    attack: f.attack || "",
+    cwe: f.cwe || "",
+    package_name: f.package_name || "",
+  }));
 
+  const prompt = `
+You are a senior Application Security Engineer.
 
+Your task is to rank security findings from most urgent to least urgent.
+
+IMPORTANT:
+- Do NOT calculate numeric scores.
+- Do NOT use a formula.
+- Compare findings using security reasoning.
+- Prioritize real exploitation risk, access control issues, sensitive components, exposed endpoints, business impact, and evidence.
+- ZAP findings may represent real web attack surface.
+- Trivy findings may represent dependency or supply-chain risk.
+- Missing security headers are usually lower priority unless they create strong business risk.
+- Access control bypass, authentication issues, sensitive data exposure, RCE, crypto libraries, and exploitable CVEs should be prioritized higher.
+
+Return ONLY valid JSON in this exact format:
+
+{
+  "ordered_items": [
+    {
+      "finding_id": number,
+      "rank": number,
+      "priority_label": "Critical|High|Medium|Low",
+      "reason": string
+    }
+  ]
+}
+
+Rules:
+- Include every finding_id exactly once.
+- rank starts at 1.
+- Lower rank means more urgent.
+- reason must be short and practical.
+- No markdown.
+- No text outside JSON.
+
+Product / Repository: ${product.name}
+
+Findings:
+${JSON.stringify(selected, null, 2)}
+`;
+
+  const { raw } = await callGeminiWithGrounding(prompt);
+  const parsed = safeParseJSON(raw);
+
+  return Array.isArray(parsed.ordered_items)
+    ? parsed.ordered_items
+    : [];
+}
+app.get("/api/repositories/:id/ai-rank-findings", async (req, res) => {
+  try {
+    const productId = req.params.id;
+
+    const productResult = await pool.query(
+      `SELECT id, name FROM products WHERE id = $1`,
+      [productId]
+    );
+
+    const product = productResult.rows[0];
+
+    if (!product) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    const findingsResult = await pool.query(
+      `
+      SELECT *
+      FROM findings
+      WHERE product_id = $1
+      ORDER BY created_at DESC
+      `,
+      [productId]
+    );
+
+    const findings = findingsResult.rows;
+
+    if (!findings.length) {
+      return res.json({
+        product_id: product.id,
+        product_name: product.name,
+        items: [],
+      });
+    }
+
+    const aiRanking = await rankFindingsWithVertex(product, findings);
+
+    const rankMap = new Map(
+      aiRanking.map((item) => [
+        Number(item.finding_id),
+        {
+          rank: Number(item.rank),
+          priority_label: item.priority_label,
+          reason: item.reason,
+        },
+      ])
+    );
+
+    const rankedFindings = findings
+      .map((finding) => {
+        const ai = rankMap.get(Number(finding.id));
+
+        return {
+          ...finding,
+          ai_rank: ai?.rank || 9999,
+          ai_priority_label: ai?.priority_label || "Low",
+          ai_ranking_reason: ai?.reason || "Not ranked by AI",
+        };
+      })
+      .sort((a, b) => a.ai_rank - b.ai_rank);
+
+    res.json({
+      product_id: product.id,
+      product_name: product.name,
+      count: rankedFindings.length,
+      source: "vertex-ai-ranking",
+      items: rankedFindings,
+    });
+  } catch (error) {
+    console.error("AI ranking error:", error.response?.data || error.message);
+    res.status(500).json({ error: "AI ranking failed" });
+  }
+});
 app.get("/api/repositories/:id/prioritized-findings", async (req, res) => {
   try {
     const productId = req.params.id;
