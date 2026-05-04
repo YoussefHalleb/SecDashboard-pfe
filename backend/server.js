@@ -1338,7 +1338,7 @@ function normalizeFinding(f, epssMap, kevMap) {
 
       title: f.title,
       severity: f.severity,
-      description: (f.description || "").slice(0, 800),
+      description_summary: (f.description || "").split("\n").slice(0, 3).join(" "),
 
       cve_id: cveId,
       package_name: extractPackageFromTitle(f.title),
@@ -1361,7 +1361,7 @@ function normalizeFinding(f, epssMap, kevMap) {
 
       title: f.title,
       severity: f.severity,
-      description: (f.description || "").slice(0, 500),
+      description_summary: (f.description || "").slice(0, 200),
 
       url: f.url || "",
       method: f.method || "",
@@ -1391,7 +1391,9 @@ async function rankFindingsWithVertex(product, findings) {
 const epssMap = await fetchEpssForCves(cveIds);
 const kevMap = await fetchKevCatalog();
 
-const selected = findings.map((f) => normalizeFinding(f, epssMap, kevMap));
+const selected = findings
+  .slice(0, 30)
+  .map((f) => normalizeFinding(f, epssMap, kevMap));
 
   const prompt = `
 You are a senior Application Security Engineer.
