@@ -1246,21 +1246,152 @@ function predictPriorityBatchWithML(findings) {
     });
   });
 }
-async function rankFindingsWithVertex(product, findings) {
-  const selected = findings.slice(0, 30).map((f) => ({
+function extractCveId(title = "") {
+  const match = title.match(/CVE-\d{4}-\d+/i);
+  return match ? match[0].toUpperCase() : "";
+}
+
+function extractPackageFromTitle(title = "") {
+  const parts = title.trim().split(/\s+/);
+  if (parts.length >= 2 && parts[0].toUpperCase().startsWith("CVE-")) {
+    return parts[1];
+  }
+  return "";
+}
+
+function extractInstalledVersion(title = "") {
+  const parts = title.trim().split(/\s+/);
+  if (parts.length >= 3 && parts[0].toUpperCase().startsWith("CVE-")) {
+    return parts[2];
+  }
+  return "";
+}
+
+function extractFixedVersion(description = "") {
+  const match = description.match(/\*\*Fixed version:\*\*\s*([^\n]+)/i);
+  return match ? match[1].trim() : "";
+}
+async function fetchEpssForCves(cveIds) {
+  try {
+    const uniqueCves = [...new Set(cveIds.filter(Boolean))];
+
+    if (!uniqueCves.length) return new Map();
+
+    const url = `https://api.first.org/data/v1/epss?cve=${uniqueCves.join(",")}`;
+
+    const response = await axios.get(url, { timeout: 15000 });
+
+    const map = new Map();
+
+    for (const item of response.data?.data || []) {
+      map.set(item.cve, {
+        epss_score: Number(item.epss || 0),
+        epss_percentile: Number(item.percentile || 0),
+      });
+    }
+
+    return map;
+  } catch (e) {
+    console.error("EPSS fetch failed:", e.message);
+    return new Map();
+  }
+}
+async function fetchKevCatalog() {
+  try {
+    const url =
+      "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json";
+
+    const response = await axios.get(url, { timeout: 15000 });
+
+    const map = new Map();
+
+    for (const item of response.data?.vulnerabilities || []) {
+      map.set(item.cveID, {
+        is_kev: true,
+        kev_due_date: item.dueDate || "",
+        kev_vulnerability_name: item.vulnerabilityName || "",
+      });
+    }
+
+    return map;
+  } catch (e) {
+    console.error("KEV fetch failed:", e.message);
+    return new Map();
+  }
+}
+function normalizeFinding(f, epssMap, kevMap) {
+  const scanner = (f.scanner || "").toLowerCase();
+  const isTrivy =
+  scanner.includes("trivy") ||
+  (f.title || "").toUpperCase().startsWith("CVE-");
+  const isZap = scanner.includes("zap");
+
+  if (isTrivy) {
+    const cveId = extractCveId(f.title);
+    const epss = epssMap.get(cveId) || {};
+    const kev = kevMap.get(cveId) || {};
+
+    return {
+      finding_id: f.id,
+      scanner_type: "trivy",
+      vulnerability_type: "dependency_cve",
+
+      title: f.title,
+      severity: f.severity,
+      description: f.description || "",
+
+      cve_id: cveId,
+      package_name: extractPackageFromTitle(f.title),
+      installed_version: extractInstalledVersion(f.title),
+      fixed_version: extractFixedVersion(f.description || ""),
+
+      epss_score: epss.epss_score || 0,
+      epss_percentile: epss.epss_percentile || 0,
+      is_kev: kev.is_kev || false,
+      kev_due_date: kev.kev_due_date || "",
+      kev_vulnerability_name: kev.kev_vulnerability_name || "",
+    };
+  }
+
+  if (isZap) {
+    return {
+      finding_id: f.id,
+      scanner_type: "zap",
+      vulnerability_type: "web_vulnerability",
+
+      title: f.title,
+      severity: f.severity,
+      description: f.description || "",
+
+      url: f.url || "",
+      method: f.method || "",
+      parameter: f.parameter || "",
+      attack: f.attack || "",
+      evidence: f.evidence || "",
+      cwe: f.cwe || "",
+      plugin_id: f.plugin_id || "",
+    };
+  }
+
+  return {
     finding_id: f.id,
+    scanner_type: "unknown",
+    vulnerability_type: "unknown",
     title: f.title,
     severity: f.severity,
-    scanner: f.scanner,
     description: f.description || "",
-    url: f.url || "",
-    method: f.method || "",
-    parameter: f.parameter || "",
-    evidence: f.evidence || "",
-    attack: f.attack || "",
-    cwe: f.cwe || "",
-    package_name: f.package_name || "",
-  }));
+  };
+}
+
+async function rankFindingsWithVertex(product, findings) {
+  const cveIds = findings
+  .map((f) => extractCveId(f.title || ""))
+  .filter(Boolean);
+
+const epssMap = await fetchEpssForCves(cveIds);
+const kevMap = await fetchKevCatalog();
+
+const selected = findings.map((f) => normalizeFinding(f, epssMap, kevMap));
 
   const prompt = `
 You are a senior Application Security Engineer.
@@ -1297,7 +1428,12 @@ Rules:
 - reason must be short and practical.
 - No markdown.
 - No text outside JSON.
-
+Additional context:
+- For Trivy CVEs, use EPSS and KEV to understand real-world exploitation risk.
+- is_kev=true means the vulnerability is known to be exploited and should usually be prioritized higher.
+- Higher epss_score means higher probability of exploitation.
+- Do not calculate a numeric score. Use EPSS and KEV only as reasoning signals.
+- For ZAP findings, prioritize access control, authentication, sensitive endpoints, evidence, attack payloads and exposed URLs.
 Product / Repository: ${product.name}
 
 Findings:
