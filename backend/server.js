@@ -1382,35 +1382,45 @@ function normalizeFinding(f, epssMap, kevMap) {
     description: f.description || "",
   };
 }
+function chunkArray(array, size) {
+  const chunks = [];
 
+  for (let i = 0; i < array.length; i += size) {
+    chunks.push(array.slice(i, i + size));
+  }
+
+  return chunks;
+}
 async function rankFindingsWithVertex(product, findings) {
   const cveIds = findings
-  .map((f) => extractCveId(f.title || ""))
-  .filter(Boolean);
+    .map((f) => extractCveId(f.title || ""))
+    .filter(Boolean);
 
-const epssMap = await fetchEpssForCves(cveIds);
-const kevMap = await fetchKevCatalog();
+  const epssMap = await fetchEpssForCves(cveIds);
+  const kevMap = await fetchKevCatalog();
 
-const selected = findings
-  .slice(0, 30)
-  .map((f) => normalizeFinding(f, epssMap, kevMap));
+  const normalizedFindings = findings.map((f) =>
+    normalizeFinding(f, epssMap, kevMap)
+  );
 
-  const prompt = `
+  const batches = chunkArray(normalizedFindings, 25);
+
+  let allRanking = [];
+
+  for (const batch of batches) {
+    const prompt = `
 You are a senior Application Security Engineer.
 
-Your task is to rank security findings from most urgent to least urgent.
+Rank these security findings from most urgent to least urgent.
 
 IMPORTANT:
 - Do NOT calculate numeric scores.
 - Do NOT use a formula.
 - Compare findings using security reasoning.
-- Prioritize real exploitation risk, access control issues, sensitive components, exposed endpoints, business impact, and evidence.
-- ZAP findings may represent real web attack surface.
-- Trivy findings may represent dependency or supply-chain risk.
-- Missing security headers are usually lower priority unless they create strong business risk.
-- Access control bypass, authentication issues, sensitive data exposure, RCE, crypto libraries, and exploitable CVEs should be prioritized higher.
+- Prioritize access control bypass, authentication issues, sensitive data exposure, RCE, exploitable CVEs, KEV, high EPSS, exposed URLs, and strong evidence.
+- Missing security headers are usually lower priority unless business risk is high.
 
-Return ONLY valid JSON in this exact format:
+Return ONLY valid JSON:
 
 {
   "ordered_items": [
@@ -1425,30 +1435,70 @@ Return ONLY valid JSON in this exact format:
 
 Rules:
 - Include every finding_id exactly once.
-- rank starts at 1.
-- Lower rank means more urgent.
-- reason must be short and practical.
+- rank starts at 1 inside this batch.
+- reason must be short.
 - No markdown.
 - No text outside JSON.
-Additional context:
-- For Trivy CVEs, use EPSS and KEV to understand real-world exploitation risk.
-- is_kev=true means the vulnerability is known to be exploited and should usually be prioritized higher.
-- Higher epss_score means higher probability of exploitation.
-- Do not calculate a numeric score. Use EPSS and KEV only as reasoning signals.
-- For ZAP findings, prioritize access control, authentication, sensitive endpoints, evidence, attack payloads and exposed URLs.
+
 Product / Repository: ${product.name}
 
 Findings:
-${JSON.stringify(selected, null, 2)}
+${JSON.stringify(batch, null, 2)}
 `;
 
-  const { raw } = await callGeminiWithGrounding(prompt);
+    const { raw } = await callGeminiWithGrounding(prompt);
+    const parsed = safeParseJSON(raw);
+
+    const batchRanking = Array.isArray(parsed.ordered_items)
+      ? parsed.ordered_items
+      : [];
+
+    allRanking.push(...batchRanking);
+  }
+
+  const finalPrompt = `
+You are a senior Application Security Engineer.
+
+You will receive ranked findings from multiple batches.
+Merge them into ONE final global ranking from most urgent to least urgent.
+
+Do NOT calculate numeric scores.
+Use the priority_label and reason to compare them.
+
+Return ONLY valid JSON:
+
+{
+  "ordered_items": [
+    {
+      "finding_id": number,
+      "rank": number,
+      "priority_label": "Critical|High|Medium|Low",
+      "reason": string
+    }
+  ]
+}
+
+Rules:
+- Include every finding_id exactly once.
+- rank starts at 1 globally.
+- No markdown.
+- No text outside JSON.
+
+Product / Repository: ${product.name}
+
+Batch rankings:
+${JSON.stringify(allRanking, null, 2)}
+`;
+
+  const { raw } = await callGeminiWithGrounding(finalPrompt);
   const parsed = safeParseJSON(raw);
-  console.log("AI ranking raw:", raw);
-console.log("AI ranking parsed:", parsed);
+
   return Array.isArray(parsed.ordered_items)
     ? parsed.ordered_items
-    : [];
+    : allRanking.map((item, index) => ({
+        ...item,
+        rank: index + 1,
+      }));
 }
 app.get("/api/repositories/:id/ai-rank-findings", async (req, res) => {
   try {
