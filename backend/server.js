@@ -1403,7 +1403,7 @@ async function rankFindingsWithVertex(product, findings) {
     normalizeFinding(f, epssMap, kevMap)
   );
 
-  const batches = chunkArray(normalizedFindings, 25);
+  const batches = chunkArray(normalizedFindings, 15);
 
   let allRanking = [];
 
