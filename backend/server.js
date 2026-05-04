@@ -1338,7 +1338,7 @@ function normalizeFinding(f, epssMap, kevMap) {
 
       title: f.title,
       severity: f.severity,
-      description: f.description || "",
+      description: (f.description || "").slice(0, 800),
 
       cve_id: cveId,
       package_name: extractPackageFromTitle(f.title),
@@ -1361,7 +1361,7 @@ function normalizeFinding(f, epssMap, kevMap) {
 
       title: f.title,
       severity: f.severity,
-      description: f.description || "",
+      description: (f.description || "").slice(0, 500),
 
       url: f.url || "",
       method: f.method || "",
@@ -1442,7 +1442,8 @@ ${JSON.stringify(selected, null, 2)}
 
   const { raw } = await callGeminiWithGrounding(prompt);
   const parsed = safeParseJSON(raw);
-
+  console.log("AI ranking raw:", raw);
+console.log("AI ranking parsed:", parsed);
   return Array.isArray(parsed.ordered_items)
     ? parsed.ordered_items
     : [];
