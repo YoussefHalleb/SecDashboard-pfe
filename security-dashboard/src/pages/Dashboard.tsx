@@ -41,6 +41,7 @@ export default function Dashboard() {
   const [selectedRepo, setSelectedRepo] = useState<Repository | null>(null);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [prioritizedFindings, setPrioritizedFindings] = useState<any[]>([]);
+  const [aiRankedFindings, setAiRankedFindings] = useState<any[]>([]);
   const [loadingAI, setLoadingAI] = useState(false);
   const [aiMessage, setAiMessage] = useState<string>("");
   const [aiSource, setAiSource] = useState<"" | "generated" | "database">("");
@@ -163,7 +164,26 @@ export default function Dashboard() {
     setSavingFeedbackId(null);
   }
 };
-  
+  const loadAiRanking = async (repoId: number) => {
+  const res = await api.get(`/api/repositories/${repoId}/ai-rank-findings`);
+  setAiRankedFindings(res.data.items || []);
+};
+
+const moveFinding = (index: number, direction: "up" | "down") => {
+  setAiRankedFindings((prev) => {
+    const items = [...prev];
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+
+    if (targetIndex < 0 || targetIndex >= items.length) return prev;
+
+    [items[index], items[targetIndex]] = [items[targetIndex], items[index]];
+
+    return items.map((item, i) => ({
+      ...item,
+      developer_rank: i + 1,
+    }));
+  });
+};
   const deleteRepo = async (repoId: number) => {
     if (!confirm("Supprimer ce repository et toutes ses données ?")) return;
     try {
@@ -348,14 +368,14 @@ export default function Dashboard() {
                 <div className="flex gap-2">
                   <button
                     onClick={async () => {
-                      setSelectedRepo(repo);
-                      setRecommendations([]);
-                      setPrioritizedFindings([]);
-                      setAiMessage("");
-                      loadPerformance(repo.id);
-                      const res = await api.get(`/api/repositories/${repo.id}/prioritized-findings`);
-                      setPrioritizedFindings(res.data);
-                    }}
+  setSelectedRepo(repo);
+  setRecommendations([]);
+  setPrioritizedFindings([]);
+  setAiRankedFindings([]);
+  setAiMessage("");
+  loadPerformance(repo.id);
+  await loadAiRanking(repo.id);
+}}
                     className="flex-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 text-slate-300 hover:text-white text-sm font-semibold py-2.5 rounded-xl transition"
                   >
                     View Details →
@@ -428,6 +448,95 @@ export default function Dashboard() {
     }`}
   >
     {feedbackMessage}
+  </div>
+)}
+              {aiRankedFindings.length > 0 && (
+  <div className="bg-slate-800/50 border border-emerald-500/20 rounded-xl p-4">
+    <div className="flex items-center justify-between mb-3">
+      <div>
+        <h3 className="text-sm font-bold text-emerald-400">
+          🤖 Vertex AI Ranked Vulnerabilities
+        </h3>
+        <p className="text-xs text-slate-500 mt-1">
+          Initial ranking from Vertex AI. Developer can reorder items manually.
+        </p>
+      </div>
+
+      <button
+        onClick={() => selectedRepo && loadAiRanking(selectedRepo.id)}
+        className="text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1.5 rounded-lg"
+      >
+        Refresh
+      </button>
+    </div>
+
+    <div className="space-y-2">
+      {aiRankedFindings.map((f, index) => (
+        <div
+          key={f.id}
+          className="bg-slate-900 border border-slate-700 rounded-lg px-4 py-3"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center font-mono text-sm font-bold">
+                {index + 1}
+              </div>
+
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-white truncate">
+                  {f.title}
+                </div>
+                <div className="text-xs text-slate-500 mt-0.5">
+                  #{f.id} · {f.severity} · {f.scanner}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <span
+                className={`text-xs font-bold px-2 py-0.5 rounded border ${
+                  f.ai_priority_label === "Critical"
+                    ? "bg-red-500/10 border-red-500/30 text-red-400"
+                    : f.ai_priority_label === "High"
+                    ? "bg-orange-500/10 border-orange-500/30 text-orange-400"
+                    : f.ai_priority_label === "Medium"
+                    ? "bg-yellow-500/10 border-yellow-500/30 text-yellow-400"
+                    : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                }`}
+              >
+                {f.ai_priority_label}
+              </span>
+
+              <button
+                onClick={() => moveFinding(index, "up")}
+                disabled={index === 0}
+                className="text-xs bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-300 px-2 py-1 rounded"
+              >
+                ↑
+              </button>
+
+              <button
+                onClick={() => moveFinding(index, "down")}
+                disabled={index === aiRankedFindings.length - 1}
+                className="text-xs bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-300 px-2 py-1 rounded"
+              >
+                ↓
+              </button>
+            </div>
+          </div>
+
+          <p className="text-xs text-slate-400 mt-2">
+            {f.ai_ranking_reason}
+          </p>
+
+          {f.developer_rank && (
+            <div className="text-xs text-blue-400 mt-2">
+              Developer reordered rank: {f.developer_rank}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
   </div>
 )}
               {/* 🔥 AI PRIORITIZATION — multi-criteria model */}
