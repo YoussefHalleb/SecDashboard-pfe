@@ -1487,7 +1487,23 @@ app.post("/api/repositories/:id/ai-rank-run", async (req, res) => {
       [productId]
     );
 
-    const findings = findingsResult.rows;
+   const severityOrder = {
+  Critical: 1,
+  High: 2,
+  Medium: 3,
+  Low: 4,
+};
+
+const findings = findingsResult.rows
+  .sort((a, b) => {
+    const sa = severityOrder[a.severity] || 99;
+    const sb = severityOrder[b.severity] || 99;
+
+    if (sa !== sb) return sa - sb;
+
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  })
+  .slice(0, 100);
 
     res.json({
       success: true,
