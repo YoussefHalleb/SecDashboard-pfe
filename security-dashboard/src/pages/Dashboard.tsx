@@ -184,6 +184,27 @@ const moveFinding = (index: number, direction: "up" | "down") => {
     }));
   });
 };
+
+  const saveDeveloperOrder = async () => {
+  if (!selectedRepo) return;
+
+  try {
+    await api.post(`/api/repositories/${selectedRepo.id}/developer-rank-feedback`, {
+      items: aiRankedFindings.map((f, index) => ({
+        finding_id: f.id,
+        ai_rank: f.ai_rank,
+        developer_rank: f.developer_rank || index + 1,
+        ai_priority_label: f.ai_priority_label,
+        developer_reason: "",
+      })),
+    });
+
+    setFeedbackMessage("Developer order saved successfully.");
+  } catch (e) {
+    console.error(e);
+    setFeedbackMessage("Failed to save developer order.");
+  }
+};
   const deleteRepo = async (repoId: number) => {
     if (!confirm("Supprimer ce repository et toutes ses données ?")) return;
     try {
@@ -462,12 +483,21 @@ const moveFinding = (index: number, direction: "up" | "down") => {
         </p>
       </div>
 
-      <button
-        onClick={() => selectedRepo && loadAiRanking(selectedRepo.id)}
-        className="text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1.5 rounded-lg"
-      >
-        Refresh
-      </button>
+     <div className="flex items-center gap-2">
+  <button
+    onClick={() => selectedRepo && loadAiRanking(selectedRepo.id)}
+    className="text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1.5 rounded-lg"
+  >
+    Refresh
+  </button>
+
+  <button
+    onClick={saveDeveloperOrder}
+    className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg"
+  >
+    Save developer order
+  </button>
+</div>
     </div>
 
     <div className="space-y-2">
