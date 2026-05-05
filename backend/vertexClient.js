@@ -1,12 +1,13 @@
 require("dotenv").config();
+
 const { SearchServiceClient } = require("@google-cloud/discoveryengine").v1beta;
 const { GoogleAuth } = require("google-auth-library");
 const axios = require("axios");
- 
+
 const PROJECT_ID = process.env.GCP_PROJECT_ID;
-const LOCATION = process.env.VERTEX_LOCATION || "global"; 
+const LOCATION = process.env.VERTEX_LOCATION || "global";
 const ENGINE_ID = process.env.VERTEX_ENGINE_ID;
- 
+
 const searchClient = new SearchServiceClient();
 
 function normalizeQuery(text) {
@@ -47,6 +48,64 @@ async function searchOWASPDocs(query) {
   return results || [];
 }
 
+async function getVertexToken() {
+  const auth = new GoogleAuth({
+    scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+  });
+
+  const authClient = await auth.getClient();
+  return (await authClient.getAccessToken()).token;
+}
+
+async function generateWithVertex(text, systemText) {
+  const token = await getVertexToken();
+
+  const MODEL_ID = process.env.VERTEX_MODEL_ID || "gemini-2.5-flash";
+
+  const url = `https://aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/global/publishers/google/models/${MODEL_ID}:generateContent`;
+
+  const body = {
+    contents: [
+      {
+        role: "user",
+        parts: [{ text }],
+      },
+    ],
+    systemInstruction: {
+      parts: [
+        {
+          text: systemText,
+        },
+      ],
+    },
+    generationConfig: {
+      temperature: 0.2,
+      maxOutputTokens: 8192,
+    },
+  };
+
+  const response = await axios.post(url, body, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+
+  const raw = response.data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+  return { raw };
+}
+
+async function callGemini(userPrompt) {
+  return generateWithVertex(
+    userPrompt,
+    `You are a senior Application Security Engineer.
+Return ONLY valid JSON.
+Do not use markdown.
+Do not use triple backticks.`
+  );
+}
+
 async function callGeminiWithGrounding(userPrompt) {
   const searchQuery = normalizeQuery(userPrompt);
   console.log("🔍 SEARCH QUERY:", searchQuery);
@@ -58,57 +117,32 @@ async function callGeminiWithGrounding(userPrompt) {
     searchResults = await searchOWASPDocs("owasp top 10 web vulnerabilities");
   }
 
- const context = searchResults
-  .slice(0, 3) // garde seulement les 3 meilleurs docs
-  .map((r) => {
-    const title =
-      r.document?.derivedStructData?.fields?.title?.stringValue || "";
+  const context = searchResults
+    .slice(0, 3)
+    .map((r) => {
+      const title =
+        r.document?.derivedStructData?.fields?.title?.stringValue || "";
 
-    const answers =
-      r.document?.derivedStructData?.fields?.extractive_answers?.listValue
-        ?.values || [];
+      const answers =
+        r.document?.derivedStructData?.fields?.extractive_answers?.listValue
+          ?.values || [];
 
-    const snippets = answers
-      .slice(0, 2) // prend 2 passages par document
-      .map(
-        (a) => a.structValue?.fields?.content?.stringValue || ""
-      )
-      .filter(Boolean)
-      .join(" ");
+      const snippets = answers
+        .slice(0, 2)
+        .map((a) => a.structValue?.fields?.content?.stringValue || "")
+        .filter(Boolean)
+        .join(" ");
 
-    return `[${title}]: ${snippets}`;
-  })
-  .filter((s) => s.length > 10)
-  .join("\n\n");
+      return `[${title}]: ${snippets}`;
+    })
+    .filter((s) => s.length > 10)
+    .join("\n\n");
 
   console.log(`✅ ${searchResults.length} docs OWASP trouvés`);
 
-  const auth = new GoogleAuth({
-    scopes: ["https://www.googleapis.com/auth/cloud-platform"],
-  });
-
-  const authClient = await auth.getClient();
-  const token = (await authClient.getAccessToken()).token;
-
-  const MODEL_ID = process.env.VERTEX_MODEL_ID || "gemini-2.5-flash";
-
-  const url = `https://aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/global/publishers/google/models/${MODEL_ID}:generateContent`;
-
-  const body = {
-    contents: [
-      {
-        role: "user",
-        parts: [
-          {
-            text: `Using these OWASP reference documents:\n\n${context}\n\n---\n\n${userPrompt}`,
-          },
-        ],
-      },
-    ],
-    systemInstruction: {
-  parts: [
-    {
-      text: `You are a senior Application Security Engineer.
+  return generateWithVertex(
+    `Using these OWASP reference documents:\n\n${context}\n\n---\n\n${userPrompt}`,
+    `You are a senior Application Security Engineer.
 
 Use OWASP documents when available.
 If OWASP context is insufficient, use secure coding best practices.
@@ -146,30 +180,15 @@ CODE FORMAT:
 - code_fix_example: maximum 5 lines, application-level only
 - code_fix_example: NO nginx or server configuration blocks
 - code_fix_example: short and focused fix
-- code_fix_example must FIX the root cause (not just block one payload)
+- code_fix_example must FIX the root cause, not just block one payload
 - code_fix_example must implement a secure design, not only a patch
 - code_fix_example must still be valid JSON string
 - escape all double quotes with \\"
-- do not use markdown fences`,
-    },
-  ],
-},
-    generationConfig: {
-      temperature: 0.2,
-      maxOutputTokens: 8192,
-    },
-  };
-
-  const response = await axios.post(url, body, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-  });
-
-  const raw = response.data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-
-  return { raw };
+- do not use markdown fences`
+  );
 }
 
-module.exports = { callGeminiWithGrounding };
+module.exports = {
+  callGemini,
+  callGeminiWithGrounding,
+};
