@@ -1462,6 +1462,40 @@ return allRanking.map((item, index) => ({
 }));
 }
 
+app.get("/api/repositories/:id/developer-rank-feedback", async (req, res) => {
+  try {
+    const productId = Number(req.params.id);
+
+    const result = await pool.query(
+      `
+      SELECT
+        f.*,
+        r.ai_rank,
+        r.ai_priority_label,
+        r.ai_ranking_reason,
+        d.developer_rank,
+        d.developer_reason
+      FROM developer_ranking_feedback d
+      JOIN findings f ON f.id = d.finding_id
+      LEFT JOIN finding_ai_ranking r ON r.finding_id = f.id
+      WHERE d.product_id = $1
+      ORDER BY d.developer_rank ASC
+      `,
+      [productId]
+    );
+
+    res.json({
+      product_id: productId,
+      count: result.rows.length,
+      source: "developer-feedback-ranking",
+      items: result.rows,
+    });
+  } catch (error) {
+    console.error("Get developer ranking feedback error:", error.message);
+    res.status(500).json({ error: "Failed to fetch developer ranking feedback" });
+  }
+});
+
 app.post("/api/repositories/:id/ai-rank-run", async (req, res) => {
   try {
     const productId = req.params.id;
