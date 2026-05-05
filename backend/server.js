@@ -1461,7 +1461,8 @@ return allRanking.map((item, index) => ({
   rank: index + 1,
 }));
 }
-app.get("/api/repositories/:id/ai-rank-findings", async (req, res) => {
+
+app.post("/api/repositories/:id/ai-rank-run", async (req, res) => {
   try {
     const productId = req.params.id;
 
@@ -1488,52 +1489,109 @@ app.get("/api/repositories/:id/ai-rank-findings", async (req, res) => {
 
     const findings = findingsResult.rows;
 
-    if (!findings.length) {
-      return res.json({
-        product_id: product.id,
-        product_name: product.name,
-        items: [],
-      });
-    }
+    res.json({
+      success: true,
+      message: "AI ranking started",
+      count: findings.length,
+    });
 
-    const aiRanking = await rankFindingsWithVertex(product, findings.slice(0, 30));
+    setImmediate(async () => {
+      try {
+        const aiRanking = await rankFindingsWithVertex(product, findings);
 
-    const rankMap = new Map(
-      aiRanking.map((item) => [
-        Number(item.finding_id),
-        {
-          rank: Number(item.rank),
-          priority_label: item.priority_label,
-          reason: item.reason,
-        },
-      ])
+        for (const item of aiRanking) {
+          await pool.query(
+            `
+            INSERT INTO finding_ai_ranking (
+              finding_id,
+              product_id,
+              ai_rank,
+              ai_priority_label,
+              ai_ranking_reason,
+              updated_at
+            )
+            VALUES ($1,$2,$3,$4,$5,now())
+            ON CONFLICT (finding_id)
+            DO UPDATE SET
+              ai_rank = EXCLUDED.ai_rank,
+              ai_priority_label = EXCLUDED.ai_priority_label,
+              ai_ranking_reason = EXCLUDED.ai_ranking_reason,
+              updated_at = now()
+            `,
+            [
+              Number(item.finding_id),
+              Number(productId),
+              Number(item.rank),
+              item.priority_label || "Low",
+              item.reason || "",
+            ]
+          );
+        }
+
+        console.log("AI ranking saved for product", productId);
+      } catch (e) {
+        console.error("Background AI ranking failed:", e.message);
+      }
+    });
+  } catch (error) {
+    console.error("AI rank run error:", error.message);
+    res.status(500).json({ error: "Failed to start AI ranking" });
+  }
+});
+
+app.get("/api/repositories/:id/ai-rank-findings", async (req, res) => {
+  try {
+    const productId = req.params.id;
+
+    const productResult = await pool.query(
+      `SELECT id, name FROM products WHERE id = $1`,
+      [productId]
     );
 
-    const rankedFindings = findings
-      .map((finding) => {
-        const ai = rankMap.get(Number(finding.id));
+    const product = productResult.rows[0];
 
-        return {
-          ...finding,
-          ai_rank: ai?.rank || 9999,
-          ai_priority_label: ai?.priority_label || "Low",
-          ai_ranking_reason: ai?.reason || "Not ranked by AI",
-        };
-      })
-      .sort((a, b) => a.ai_rank - b.ai_rank);
+    if (!product) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    const result = await pool.query(
+      `
+      SELECT
+        f.*,
+        r.ai_rank,
+        r.ai_priority_label,
+        r.ai_ranking_reason,
+        r.updated_at AS ai_ranking_updated_at
+      FROM findings f
+      LEFT JOIN finding_ai_ranking r
+        ON r.finding_id = f.id
+      WHERE f.product_id = $1
+      ORDER BY
+        CASE WHEN r.ai_rank IS NULL THEN 1 ELSE 0 END,
+        r.ai_rank ASC,
+        f.created_at DESC
+      `,
+      [productId]
+    );
 
     res.json({
       product_id: product.id,
       product_name: product.name,
-      count: rankedFindings.length,
-      source: "vertex-ai-ranking",
-      items: rankedFindings,
+      count: result.rows.length,
+      source: "database-ai-ranking",
+      items: result.rows.map((row) => ({
+        ...row,
+        ai_rank: row.ai_rank || 9999,
+        ai_priority_label: row.ai_priority_label || "Low",
+        ai_ranking_reason: row.ai_ranking_reason || "Not ranked yet",
+      })),
     });
   } catch (error) {
-    console.error("AI ranking error:", error.response?.data || error.message);
-    res.status(500).json({ error: "AI ranking failed" });
+    console.error("Get AI ranking error:", error.message);
+    res.status(500).json({ error: "Failed to fetch AI ranking" });
   }
 });
+
 app.get("/api/repositories/:id/prioritized-findings", async (req, res) => {
   try {
     const productId = req.params.id;
