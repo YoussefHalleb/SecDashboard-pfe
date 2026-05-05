@@ -168,6 +168,11 @@ export default function Dashboard() {
   const res = await api.get(`/api/repositories/${repoId}/ai-rank-findings`);
   setAiRankedFindings(res.data.items || []);
 };
+  const loadDeveloperRanking = async (repoId: number) => {
+  const res = await api.get(`/api/repositories/${repoId}/developer-rank-feedback`);
+  setAiRankedFindings(res.data.items || []);
+  setFeedbackMessage("Developer order loaded.");
+};
 
 const moveFinding = (index: number, direction: "up" | "down") => {
   setAiRankedFindings((prev) => {
@@ -490,7 +495,12 @@ const moveFinding = (index: number, direction: "up" | "down") => {
   >
     Refresh
   </button>
-
+<button
+  onClick={() => selectedRepo && loadDeveloperRanking(selectedRepo.id)}
+  className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg"
+>
+  Dev order
+</button>
   <button
     onClick={saveDeveloperOrder}
     className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg"
