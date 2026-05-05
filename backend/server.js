@@ -1539,6 +1539,54 @@ app.post("/api/repositories/:id/ai-rank-run", async (req, res) => {
   }
 });
 
+app.post("/api/repositories/:id/developer-rank-feedback", async (req, res) => {
+  try {
+    const productId = Number(req.params.id);
+    const { items } = req.body;
+
+    if (!Array.isArray(items)) {
+      return res.status(400).json({ error: "items must be an array" });
+    }
+
+    await pool.query(
+      `DELETE FROM developer_ranking_feedback WHERE product_id = $1`,
+      [productId]
+    );
+
+    for (const item of items) {
+      await pool.query(
+        `
+        INSERT INTO developer_ranking_feedback (
+          product_id,
+          finding_id,
+          ai_rank,
+          developer_rank,
+          ai_priority_label,
+          developer_reason
+        )
+        VALUES ($1,$2,$3,$4,$5,$6)
+        `,
+        [
+          productId,
+          Number(item.finding_id),
+          Number(item.ai_rank),
+          Number(item.developer_rank),
+          item.ai_priority_label || "",
+          item.developer_reason || "",
+        ]
+      );
+    }
+
+    res.json({
+      success: true,
+      saved: items.length,
+    });
+  } catch (error) {
+    console.error("Save developer ranking feedback error:", error.message);
+    res.status(500).json({ error: "Failed to save developer ranking feedback" });
+  }
+});
+
 app.get("/api/repositories/:id/ai-rank-findings", async (req, res) => {
   try {
     const productId = req.params.id;
