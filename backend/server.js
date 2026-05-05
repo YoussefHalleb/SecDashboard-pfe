@@ -8,7 +8,7 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const { spawn } = require("child_process");
-const { callGeminiWithGrounding } = require("./vertexClient");
+const { callGeminiWithGrounding, callGemini } = require("./vertexClient");
 const { parseZapHtmlFile } = require("./zapParser");
 const { getSecret } = require("./secretManager");
 function safeParseJSON(raw) {
@@ -1446,7 +1446,7 @@ Findings:
 ${JSON.stringify(batch, null, 2)}
 `;
 
-    const { raw } = await callGeminiWithGrounding(prompt);
+    const { raw } = await callGemini(prompt);
     const parsed = safeParseJSON(raw);
 
     const batchRanking = Array.isArray(parsed.ordered_items)
