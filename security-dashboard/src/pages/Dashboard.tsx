@@ -43,6 +43,7 @@ export default function Dashboard() {
   const [prioritizedFindings, setPrioritizedFindings] = useState<any[]>([]);
   const [aiRankedFindings, setAiRankedFindings] = useState<any[]>([]);
   const [loadingAI, setLoadingAI] = useState(false);
+  const [rankingReasons, setRankingReasons] = useState<Record<number, string>>({});
   const [aiMessage, setAiMessage] = useState<string>("");
   const [aiSource, setAiSource] = useState<"" | "generated" | "database">("");
   const [perfResults, setPerfResults] = useState<any[]>([]);
@@ -168,9 +169,18 @@ export default function Dashboard() {
   const res = await api.get(`/api/repositories/${repoId}/ai-rank-findings`);
   setAiRankedFindings(res.data.items || []);
 };
-  const loadDeveloperRanking = async (repoId: number) => {
+ const loadDeveloperRanking = async (repoId: number) => {
   const res = await api.get(`/api/repositories/${repoId}/developer-rank-feedback`);
-  setAiRankedFindings(res.data.items || []);
+  const items = res.data.items || [];
+  setAiRankedFindings(items);
+
+  // pré-remplir les reasons déjà sauvegardées
+  const reasons: Record<number, string> = {};
+  items.forEach((f: any) => {
+    if (f.developer_reason) reasons[f.id] = f.developer_reason;
+  });
+  setRankingReasons(reasons);
+
   setFeedbackMessage("Developer order loaded.");
 };
 
@@ -200,7 +210,7 @@ const moveFinding = (index: number, direction: "up" | "down") => {
         ai_rank: f.ai_rank,
         developer_rank: f.developer_rank || index + 1,
         ai_priority_label: f.ai_priority_label,
-        developer_reason: "",
+        developer_reason: rankingReasons[f.id] || "",
       })),
     });
 
@@ -398,6 +408,7 @@ const moveFinding = (index: number, direction: "up" | "down") => {
   setRecommendations([]);
   setPrioritizedFindings([]);
   setAiRankedFindings([]);
+  setRankingReasons({});  
   setAiMessage("");
   loadPerformance(repo.id);
   await loadAiRanking(repo.id);
@@ -565,15 +576,26 @@ const moveFinding = (index: number, direction: "up" | "down") => {
             </div>
           </div>
 
-          <p className="text-xs text-slate-400 mt-2">
-            {f.ai_ranking_reason}
-          </p>
+         <p className="text-xs text-slate-400 mt-2">
+  {f.ai_ranking_reason}
+</p>
 
-          {f.developer_rank && (
-            <div className="text-xs text-blue-400 mt-2">
-              Developer reordered rank: {f.developer_rank}
-            </div>
-          )}
+{/* Champ reason du développeur */}
+<textarea
+  rows={2}
+  placeholder="Why did you reorder this? (optional)"
+  value={rankingReasons[f.id] ?? f.developer_reason ?? ""}
+  onChange={(e) =>
+    setRankingReasons((prev) => ({ ...prev, [f.id]: e.target.value }))
+  }
+  className="w-full mt-2 bg-slate-800 border border-slate-600 text-xs text-slate-300 placeholder-slate-600 rounded-lg px-3 py-2 resize-none focus:outline-none focus:border-slate-500"
+/>
+
+{f.developer_rank && (
+  <div className="text-xs text-blue-400 mt-1">
+    Developer reordered rank: {f.developer_rank}
+  </div>
+)}
         </div>
       ))}
     </div>
