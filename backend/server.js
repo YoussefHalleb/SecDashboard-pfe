@@ -1392,36 +1392,57 @@ function chunkArray(array, size) {
   return chunks;
 }
 async function rankFindingsWithVertex(product, findings) {
-  const cveIds = findings
-    .map((f) => extractCveId(f.title || ""))
-    .filter(Boolean);
-
+  const cveIds = findings.map(f => extractCveId(f.title || "")).filter(Boolean);
   const epssMap = await fetchEpssForCves(cveIds);
   const kevMap = await fetchKevCatalog();
+  const normalized = findings.map(f => normalizeFinding(f, epssMap, kevMap));
 
-  const normalizedFindings = findings.map((f) =>
-    normalizeFinding(f, epssMap, kevMap)
-  );
-
-  const batches = chunkArray(normalizedFindings, 15);
+  const trivyFindings   = normalized.filter(f => f.scanner_type === "trivy");
+  const zapFindings     = normalized.filter(f => f.scanner_type === "zap");
+  const unknownFindings = normalized.filter(f => f.scanner_type === "unknown");
 
   let allRanking = [];
 
+  if (trivyFindings.length > 0) {
+    const ranked = await rankBatch(product, trivyFindings, "trivy");
+    allRanking.push(...ranked);
+  }
+  if (zapFindings.length > 0) {
+    const ranked = await rankBatch(product, zapFindings, "zap");
+    allRanking.push(...ranked);
+  }
+  if (unknownFindings.length > 0) {
+    const ranked = await rankBatch(product, unknownFindings, "unknown");
+    allRanking.push(...ranked);
+  }
+
+  return allRanking;
+}
+async function rankBatch(product, findings, scannerType) {
+  const batches = chunkArray(findings, 15);
+  let allRanking = [];
+
   for (const batch of batches) {
-    const prompt = `
-You are a senior Application Security Engineer.
+    const prompt = buildRankPrompt(product, batch, scannerType);
+    const { raw } = await callGemini(prompt);
+    const parsed = safeParseJSON(raw);
+    const batchRanking = Array.isArray(parsed.ordered_items)
+      ? parsed.ordered_items
+      : [];
+    allRanking.push(...batchRanking);
+  }
 
-Rank these security findings from most urgent to least urgent.
+  // Rank local qui repart de 1 pour chaque scanner_type
+  return allRanking.map((item, index) => ({
+    ...item,
+    rank: index + 1,
+    scanner_type: scannerType,
+  }));
+}
 
-IMPORTANT:
-- Do NOT calculate numeric scores.
-- Do NOT use a formula.
-- Compare findings using security reasoning.
-- Prioritize access control bypass, authentication issues, sensitive data exposure, RCE, exploitable CVEs, KEV, high EPSS, exposed URLs, and strong evidence.
-- Missing security headers are usually lower priority unless business risk is high.
-
+function buildRankPrompt(product, batch, scannerType) {
+  const baseRules = `
 Return ONLY valid JSON:
-
 {
   "ordered_items": [
     {
@@ -1432,35 +1453,51 @@ Return ONLY valid JSON:
     }
   ]
 }
-
 Rules:
 - Include every finding_id exactly once.
 - rank starts at 1 inside this batch.
-- reason must be short.
-- No markdown.
-- No text outside JSON.
+- reason must be 1 short sentence.
+- No markdown, no text outside JSON.
 
-Product / Repository: ${product.name}
-
+Product: ${product.name}
 Findings:
 ${JSON.stringify(batch, null, 2)}
 `;
 
-    const { raw } = await callGemini(prompt);
-    const parsed = safeParseJSON(raw);
+  if (scannerType === "trivy") {
+    return `
+You are a senior DevSecOps engineer ranking container and dependency CVEs.
 
-    const batchRanking = Array.isArray(parsed.ordered_items)
-      ? parsed.ordered_items
-      : [];
+Prioritize in this order:
+1. KEV (CISA Known Exploited Vulnerabilities) → always Critical
+2. EPSS score > 0.4 → very high urgency
+3. CVSS base score (higher = more urgent)
+4. Fix available (fixed_version not empty) → more urgent to patch
+5. Package exposure (network-reachable vs local-only)
 
-    allRanking.push(...batchRanking);
+Do NOT rank web/HTTP vulnerabilities here.
+${baseRules}`;
   }
 
-return allRanking.map((item, index) => ({
-  ...item,
-  rank: index + 1,
-}));
+  if (scannerType === "zap") {
+    return `
+You are a senior Application Security Engineer ranking OWASP ZAP web vulnerabilities.
+
+Prioritize in this order:
+1. Authentication bypass, broken access control (OWASP A01, A07)
+2. Injection: SQLi, XSS, SSTI, XXE, command injection
+3. Sensitive data exposure on authenticated or admin endpoints
+4. Evidence field confirmed + attack payload present → higher urgency
+5. Sensitive URL patterns (/admin, /login, /api/payment, /auth)
+6. Missing security headers → Low unless combined with other issues
+
+Do NOT rank CVEs or dependency issues here.
+${baseRules}`;
+  }
+
+  return `You are a security engineer. Rank these findings by urgency.\n${baseRules}`;
 }
+
 
 app.get("/api/repositories/:id/developer-rank-feedback", async (req, res) => {
   try {
@@ -1551,32 +1588,35 @@ const findings = findingsResult.rows
         const aiRanking = await rankFindingsWithVertex(product, findings);
 
         for (const item of aiRanking) {
-          await pool.query(
-            `
-            INSERT INTO finding_ai_ranking (
-              finding_id,
-              product_id,
-              ai_rank,
-              ai_priority_label,
-              ai_ranking_reason,
-              updated_at
-            )
-            VALUES ($1,$2,$3,$4,$5,now())
-            ON CONFLICT (finding_id)
-            DO UPDATE SET
-              ai_rank = EXCLUDED.ai_rank,
-              ai_priority_label = EXCLUDED.ai_priority_label,
-              ai_ranking_reason = EXCLUDED.ai_ranking_reason,
-              updated_at = now()
-            `,
-            [
-              Number(item.finding_id),
-              Number(productId),
-              Number(item.rank),
-              item.priority_label || "Low",
-              item.reason || "",
-            ]
-          );
+         await pool.query(
+  `
+  INSERT INTO finding_ai_ranking (
+    finding_id,
+    product_id,
+    ai_rank,
+    ai_priority_label,
+    ai_ranking_reason,
+    scanner_type,
+    updated_at
+  )
+  VALUES ($1,$2,$3,$4,$5,$6,now())
+  ON CONFLICT (finding_id)
+  DO UPDATE SET
+    ai_rank = EXCLUDED.ai_rank,
+    ai_priority_label = EXCLUDED.ai_priority_label,
+    ai_ranking_reason = EXCLUDED.ai_ranking_reason,
+    scanner_type = EXCLUDED.scanner_type,
+    updated_at = now()
+  `,
+  [
+    Number(item.finding_id),
+    Number(productId),
+    Number(item.rank),
+    item.priority_label || "Low",
+    item.reason || "",
+    item.scanner_type || "unknown",
+  ]
+);
         }
 
         console.log("AI ranking saved for product", productId);
@@ -1647,6 +1687,7 @@ app.get("/api/repositories/:id/ai-rank-findings", async (req, res) => {
         r.ai_rank,
         r.ai_priority_label,
         r.ai_ranking_reason,
+        r.scanner_type,
         r.updated_at AS ai_ranking_updated_at
       FROM findings f
       LEFT JOIN finding_ai_ranking r
