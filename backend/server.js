@@ -1466,24 +1466,25 @@ app.get("/api/repositories/:id/developer-rank-feedback", async (req, res) => {
   try {
     const productId = Number(req.params.id);
 
-    const result = await pool.query(
-      `
-      SELECT
-        f.*,
-        r.ai_rank,
-        r.ai_priority_label,
-        r.ai_ranking_reason,
-        d.developer_rank,
-        d.developer_reason
-      FROM developer_ranking_feedback d
-      JOIN findings f ON f.id = d.finding_id
-      LEFT JOIN finding_ai_ranking r ON r.finding_id = f.id
-      WHERE d.product_id = $1
-      ORDER BY d.developer_rank ASC
-      `,
-      [productId]
-    );
-
+   const result = await pool.query(
+  `
+  SELECT
+    f.*,
+    r.ai_rank,
+    r.ai_priority_label,
+    r.ai_ranking_reason,
+    d.developer_rank,
+    d.developer_reason,
+    u.email AS developer_email
+  FROM developer_ranking_feedback d
+  JOIN findings f ON f.id = d.finding_id
+  LEFT JOIN finding_ai_ranking r ON r.finding_id = f.id
+  LEFT JOIN users u ON u.id = d.user_id
+  WHERE d.product_id = $1
+  ORDER BY d.developer_rank ASC
+  `,
+  [productId]
+);
     res.json({
       product_id: productId,
       count: result.rows.length,
@@ -1589,7 +1590,7 @@ const findings = findingsResult.rows
   }
 });
 
-app.post("/api/repositories/:id/developer-rank-feedback", async (req, res) => {
+app.post("/api/repositories/:id/developer-rank-feedback", authMiddleware, async (req, res) => {
   try {
     const productId = Number(req.params.id);
     const { items } = req.body;
@@ -1604,27 +1605,14 @@ app.post("/api/repositories/:id/developer-rank-feedback", async (req, res) => {
     );
 
     for (const item of items) {
-      await pool.query(
-        `
-        INSERT INTO developer_ranking_feedback (
-          product_id,
-          finding_id,
-          ai_rank,
-          developer_rank,
-          ai_priority_label,
-          developer_reason
-        )
-        VALUES ($1,$2,$3,$4,$5,$6)
-        `,
-        [
-          productId,
-          Number(item.finding_id),
-          Number(item.ai_rank),
-          Number(item.developer_rank),
-          item.ai_priority_label || "",
-          item.developer_reason || "",
-        ]
-      );
+  await pool.query(
+  `INSERT INTO developer_ranking_feedback (
+    product_id, finding_id, ai_rank, developer_rank,
+    ai_priority_label, developer_reason, user_id
+  ) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+  [productId, item.finding_id, item.ai_rank, item.developer_rank,
+   item.ai_priority_label, item.developer_reason, req.user.sub]
+);
     }
 
     res.json({
