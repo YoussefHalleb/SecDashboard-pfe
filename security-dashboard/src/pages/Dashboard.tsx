@@ -592,8 +592,15 @@ const moveFinding = (index: number, direction: "up" | "down") => {
 />
 
 {f.developer_rank && (
-  <div className="text-xs text-blue-400 mt-1">
-    Developer reordered rank: {f.developer_rank}
+  <div className="flex items-center gap-2 mt-1 flex-wrap">
+    <span className="text-xs text-blue-400">
+      Developer rank: {f.developer_rank}
+    </span>
+    {f.developer_email && (
+      <span className="text-xs bg-slate-700 border border-slate-600 text-slate-300 px-2 py-0.5 rounded-full">
+        👤 {f.developer_email}
+      </span>
+    )}
   </div>
 )}
         </div>
