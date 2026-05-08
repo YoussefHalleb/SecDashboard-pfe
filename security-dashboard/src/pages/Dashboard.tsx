@@ -42,6 +42,7 @@ export default function Dashboard() {
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [prioritizedFindings, setPrioritizedFindings] = useState<any[]>([]);
   const [aiRankedFindings, setAiRankedFindings] = useState<any[]>([]);
+  const [rankingTab, setRankingTab] = useState<"trivy" | "zap">("zap"); // ← AJOUTÉ
   const [loadingAI, setLoadingAI] = useState(false);
   const [rankingReasons, setRankingReasons] = useState<Record<number, string>>({});
   const [aiMessage, setAiMessage] = useState<string>("");
@@ -112,114 +113,100 @@ export default function Dashboard() {
     }
   };
 
-  const saveDeveloperPriority = async (
-  finding: any,
-  developerPriority: string,
-) => {
-  if (!selectedRepo) return;
+  const saveDeveloperPriority = async (finding: any, developerPriority: string) => {
+    if (!selectedRepo) return;
 
-  const scoreMap: Record<string, number> = {
-    Critical: 95,
-    High: 75,
-    Medium: 50,
-    Low: 25,
-    "False Positive": 0,
-    "Accepted Risk": 10,
+    const scoreMap: Record<string, number> = {
+      Critical: 95,
+      High: 75,
+      Medium: 50,
+      Low: 25,
+      "False Positive": 0,
+      "Accepted Risk": 10,
+    };
+
+    setSavingFeedbackId(finding.id);
+    setFeedbackMessage("");
+
+    try {
+      await api.post(`/api/findings/${finding.id}/feedback`, {
+        product_id: selectedRepo.id,
+        scanner_severity: finding.severity,
+        scanner: finding.scanner,
+        system_priority: finding.priority_label,
+        system_score: finding.priority_score,
+        developer_priority: developerPriority,
+        developer_score: scoreMap[developerPriority],
+        developer_reason: "",
+        is_false_positive: developerPriority === "False Positive",
+        accepted_risk: developerPriority === "Accepted Risk",
+      });
+
+      setPrioritizedFindings((prev) =>
+        prev.map((item) =>
+          item.id === finding.id
+            ? { ...item, developer_priority: developerPriority, developer_score: scoreMap[developerPriority] }
+            : item,
+        ),
+      );
+
+      setFeedbackMessage(`Developer priority saved for #${finding.id}`);
+    } catch (e) {
+      console.error(e);
+      setFeedbackMessage("Failed to save developer priority");
+      alert("Failed to save developer priority");
+    } finally {
+      setSavingFeedbackId(null);
+    }
   };
 
-  setSavingFeedbackId(finding.id);
-  setFeedbackMessage("");
-
-  try {
-    await api.post(`/api/findings/${finding.id}/feedback`, {
-      product_id: selectedRepo.id,
-      scanner_severity: finding.severity,
-      scanner: finding.scanner,
-      system_priority: finding.priority_label,
-      system_score: finding.priority_score,
-      developer_priority: developerPriority,
-      developer_score: scoreMap[developerPriority],
-      developer_reason: "",
-      is_false_positive: developerPriority === "False Positive",
-      accepted_risk: developerPriority === "Accepted Risk",
-    });
-
-    setPrioritizedFindings((prev) =>
-      prev.map((item) =>
-        item.id === finding.id
-          ? {
-              ...item,
-              developer_priority: developerPriority,
-              developer_score: scoreMap[developerPriority],
-            }
-          : item,
-      ),
-    );
-
-    setFeedbackMessage(`Developer priority saved for #${finding.id}`);
-  } catch (e) {
-    console.error(e);
-    setFeedbackMessage("Failed to save developer priority");
-    alert("Failed to save developer priority");
-  } finally {
-    setSavingFeedbackId(null);
-  }
-};
   const loadAiRanking = async (repoId: number) => {
-  const res = await api.get(`/api/repositories/${repoId}/ai-rank-findings`);
-  setAiRankedFindings(res.data.items || []);
-};
- const loadDeveloperRanking = async (repoId: number) => {
-  const res = await api.get(`/api/repositories/${repoId}/developer-rank-feedback`);
-  const items = res.data.items || [];
-  setAiRankedFindings(items);
+    const res = await api.get(`/api/repositories/${repoId}/ai-rank-findings`);
+    setAiRankedFindings(res.data.items || []);
+  };
 
-  // pré-remplir les reasons déjà sauvegardées
-  const reasons: Record<number, string> = {};
-  items.forEach((f: any) => {
-    if (f.developer_reason) reasons[f.id] = f.developer_reason;
-  });
-  setRankingReasons(reasons);
+  const loadDeveloperRanking = async (repoId: number) => {
+    const res = await api.get(`/api/repositories/${repoId}/developer-rank-feedback`);
+    const items = res.data.items || [];
+    setAiRankedFindings(items);
 
-  setFeedbackMessage("Developer order loaded.");
-};
+    const reasons: Record<number, string> = {};
+    items.forEach((f: any) => {
+      if (f.developer_reason) reasons[f.id] = f.developer_reason;
+    });
+    setRankingReasons(reasons);
+    setFeedbackMessage("Developer order loaded.");
+  };
 
-const moveFinding = (index: number, direction: "up" | "down") => {
-  setAiRankedFindings((prev) => {
-    const items = [...prev];
-    const targetIndex = direction === "up" ? index - 1 : index + 1;
-
-    if (targetIndex < 0 || targetIndex >= items.length) return prev;
-
-    [items[index], items[targetIndex]] = [items[targetIndex], items[index]];
-
-    return items.map((item, i) => ({
-      ...item,
-      developer_rank: i + 1,
-    }));
-  });
-};
+  const moveFinding = (index: number, direction: "up" | "down") => {
+    setAiRankedFindings((prev) => {
+      const items = [...prev];
+      const targetIndex = direction === "up" ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= items.length) return prev;
+      [items[index], items[targetIndex]] = [items[targetIndex], items[index]];
+      return items.map((item, i) => ({ ...item, developer_rank: i + 1 }));
+    });
+  };
 
   const saveDeveloperOrder = async () => {
-  if (!selectedRepo) return;
+    if (!selectedRepo) return;
+    try {
+      await api.post(`/api/repositories/${selectedRepo.id}/developer-rank-feedback`, {
+        items: aiRankedFindings.map((f, index) => ({
+          finding_id: f.id,
+          ai_rank: f.ai_rank,
+          developer_rank: f.developer_rank || index + 1,
+          ai_priority_label: f.ai_priority_label,
+          developer_reason: rankingReasons[f.id] || "",
+        })),
+      });
+      setFeedbackMessage("Developer order saved successfully.");
+    } catch (e) {
+      console.error(e);
+      setFeedbackMessage("Failed to save developer order.");
+    }
+  };
 
-  try {
-    await api.post(`/api/repositories/${selectedRepo.id}/developer-rank-feedback`, {
-      items: aiRankedFindings.map((f, index) => ({
-        finding_id: f.id,
-        ai_rank: f.ai_rank,
-        developer_rank: f.developer_rank || index + 1,
-        ai_priority_label: f.ai_priority_label,
-        developer_reason: rankingReasons[f.id] || "",
-      })),
-    });
-
-    setFeedbackMessage("Developer order saved successfully.");
-  } catch (e) {
-    console.error(e);
-    setFeedbackMessage("Failed to save developer order.");
-  }
-};
   const deleteRepo = async (repoId: number) => {
     if (!confirm("Supprimer ce repository et toutes ses données ?")) return;
     try {
@@ -237,12 +224,8 @@ const moveFinding = (index: number, direction: "up" | "down") => {
     setAiMessage("");
     setAiSource("");
     try {
-      const zapOnly = selectedRepo.vulnerabilities.filter(
-        (v) => v.scanner === "ZAP Scan",
-      );
-      const filtered = zapOnly.filter(
-        (v) => v.severity === "High" || v.severity === "Medium",
-      );
+      const zapOnly = selectedRepo.vulnerabilities.filter((v) => v.scanner === "ZAP Scan");
+      const filtered = zapOnly.filter((v) => v.severity === "High" || v.severity === "Medium");
       const sorted = [...filtered].sort((a, b) => {
         if (a.severity === b.severity) return 0;
         return a.severity === "High" ? -1 : 1;
@@ -273,10 +256,8 @@ const moveFinding = (index: number, direction: "up" | "down") => {
       setAiSource(source);
 
       if (items.length === 0) setAiMessage("AI returned no items.");
-      else if (source === "generated")
-        setAiMessage("AI recommendations generated and saved.");
-      else if (source === "database")
-        setAiMessage("Existing AI recommendations loaded from database.");
+      else if (source === "generated") setAiMessage("AI recommendations generated and saved.");
+      else if (source === "database") setAiMessage("Existing AI recommendations loaded from database.");
     } catch (err) {
       console.error(err);
       setAiMessage("Failed to generate AI recommendations");
@@ -404,15 +385,16 @@ const moveFinding = (index: number, direction: "up" | "down") => {
                 <div className="flex gap-2">
                   <button
                     onClick={async () => {
-  setSelectedRepo(repo);
-  setRecommendations([]);
-  setPrioritizedFindings([]);
-  setAiRankedFindings([]);
-  setRankingReasons({});  
-  setAiMessage("");
-  loadPerformance(repo.id);
-  await loadAiRanking(repo.id);
-}}
+                      setSelectedRepo(repo);
+                      setRecommendations([]);
+                      setPrioritizedFindings([]);
+                      setAiRankedFindings([]);
+                      setRankingReasons({});
+                      setAiMessage("");
+                      setRankingTab("zap");
+                      loadPerformance(repo.id);
+                      await loadAiRanking(repo.id);
+                    }}
                     className="flex-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 text-slate-300 hover:text-white text-sm font-semibold py-2.5 rounded-xl transition"
                   >
                     View Details →
@@ -476,138 +458,180 @@ const moveFinding = (index: number, direction: "up" | "down") => {
 
             {/* Modal Body — scrollable */}
             <div className="overflow-y-auto flex-1 p-6 space-y-5">
-            {!!feedbackMessage && (
-  <div
-    className={`text-xs px-4 py-2.5 rounded-xl border ${
-      feedbackMessage.includes("Failed")
-        ? "bg-red-500/10 border-red-500/20 text-red-400"
-        : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-    }`}
-  >
-    {feedbackMessage}
-  </div>
-)}
+
+              {/* Feedback message */}
+              {!!feedbackMessage && (
+                <div className={`text-xs px-4 py-2.5 rounded-xl border ${
+                  feedbackMessage.includes("Failed")
+                    ? "bg-red-500/10 border-red-500/20 text-red-400"
+                    : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                }`}>
+                  {feedbackMessage}
+                </div>
+              )}
+
+              {/* ── AI Ranked Findings avec onglets Trivy / ZAP ── */}
               {aiRankedFindings.length > 0 && (
-  <div className="bg-slate-800/50 border border-emerald-500/20 rounded-xl p-4">
-    <div className="flex items-center justify-between mb-3">
-      <div>
-        <h3 className="text-sm font-bold text-emerald-400">
-          🤖 Vertex AI Ranked Vulnerabilities
-        </h3>
-        <p className="text-xs text-slate-500 mt-1">
-          Initial ranking from Vertex AI. Developer can reorder items manually.
-        </p>
-      </div>
+                <div className="bg-slate-800/50 border border-emerald-500/20 rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <h3 className="text-sm font-bold text-emerald-400">
+                        🤖 Vertex AI Ranked Vulnerabilities
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Trivy and ZAP ranked separately by the AI.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => selectedRepo && loadAiRanking(selectedRepo.id)}
+                        className="text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1.5 rounded-lg"
+                      >
+                        Refresh
+                      </button>
+                      <button
+                        onClick={() => selectedRepo && loadDeveloperRanking(selectedRepo.id)}
+                        className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg"
+                      >
+                        Dev order
+                      </button>
+                      <button
+                        onClick={saveDeveloperOrder}
+                        className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg"
+                      >
+                        Save developer order
+                      </button>
+                    </div>
+                  </div>
 
-     <div className="flex items-center gap-2">
-  <button
-    onClick={() => selectedRepo && loadAiRanking(selectedRepo.id)}
-    className="text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1.5 rounded-lg"
-  >
-    Refresh
-  </button>
-<button
-  onClick={() => selectedRepo && loadDeveloperRanking(selectedRepo.id)}
-  className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg"
->
-  Dev order
-</button>
-  <button
-    onClick={saveDeveloperOrder}
-    className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg"
-  >
-    Save developer order
-  </button>
-</div>
-    </div>
+                  {/* Onglets ZAP / Trivy */}
+                  <div className="flex gap-2 mb-4">
+                    {(["zap", "trivy"] as const).map((tab) => {
+                      const count = aiRankedFindings.filter(
+                        (f) => (f.scanner_type || "unknown") === tab
+                      ).length;
+                      return (
+                        <button
+                          key={tab}
+                          onClick={() => setRankingTab(tab)}
+                          className={`flex items-center gap-2 text-xs font-semibold px-4 py-2 rounded-lg border transition ${
+                            rankingTab === tab
+                              ? tab === "zap"
+                                ? "bg-orange-500/20 border-orange-500/40 text-orange-300"
+                                : "bg-teal-500/20 border-teal-500/40 text-teal-300"
+                              : "bg-slate-800 border-slate-700 text-slate-400 hover:text-white"
+                          }`}
+                        >
+                          {tab === "zap" ? "🌐 ZAP" : "🐳 Trivy"}
+                          <span className="bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded-full text-xs">
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
 
-    <div className="space-y-2">
-      {aiRankedFindings.map((f, index) => (
-        <div
-          key={f.id}
-          className="bg-slate-900 border border-slate-700 rounded-lg px-4 py-3"
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0 flex-1">
-              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center font-mono text-sm font-bold">
-                {index + 1}
-              </div>
+                  {/* Liste filtrée par onglet */}
+                  <div className="space-y-2">
+                    {aiRankedFindings
+                      .filter((f) => (f.scanner_type || "unknown") === rankingTab)
+                      .map((f, index) => {
+                        const globalIndex = aiRankedFindings.indexOf(f);
+                        const filteredLength = aiRankedFindings.filter(
+                          (x) => (x.scanner_type || "unknown") === rankingTab
+                        ).length;
+                        return (
+                          <div
+                            key={f.id}
+                            className="bg-slate-900 border border-slate-700 rounded-lg px-4 py-3"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-3 min-w-0 flex-1">
+                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-mono text-sm font-bold border ${
+                                  rankingTab === "zap"
+                                    ? "bg-orange-500/10 border-orange-500/30 text-orange-400"
+                                    : "bg-teal-500/10 border-teal-500/30 text-teal-400"
+                                }`}>
+                                  {index + 1}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="text-sm font-semibold text-white truncate">
+                                    {f.title}
+                                  </div>
+                                  <div className="text-xs text-slate-500 mt-0.5">
+                                    #{f.id} · {f.severity} · {f.scanner}
+                                  </div>
+                                </div>
+                              </div>
 
-              <div className="min-w-0">
-                <div className="text-sm font-semibold text-white truncate">
-                  {f.title}
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className={`text-xs font-bold px-2 py-0.5 rounded border ${
+                                  f.ai_priority_label === "Critical"
+                                    ? "bg-red-500/10 border-red-500/30 text-red-400"
+                                    : f.ai_priority_label === "High"
+                                    ? "bg-orange-500/10 border-orange-500/30 text-orange-400"
+                                    : f.ai_priority_label === "Medium"
+                                    ? "bg-yellow-500/10 border-yellow-500/30 text-yellow-400"
+                                    : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                                }`}>
+                                  {f.ai_priority_label}
+                                </span>
+                                <button
+                                  onClick={() => moveFinding(globalIndex, "up")}
+                                  disabled={index === 0}
+                                  className="text-xs bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-300 px-2 py-1 rounded"
+                                >
+                                  ↑
+                                </button>
+                                <button
+                                  onClick={() => moveFinding(globalIndex, "down")}
+                                  disabled={index === filteredLength - 1}
+                                  className="text-xs bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-300 px-2 py-1 rounded"
+                                >
+                                  ↓
+                                </button>
+                              </div>
+                            </div>
+
+                            <p className="text-xs text-slate-400 mt-2">{f.ai_ranking_reason}</p>
+
+                            <textarea
+                              rows={2}
+                              placeholder="Why did you reorder this? (optional)"
+                              value={rankingReasons[f.id] ?? f.developer_reason ?? ""}
+                              onChange={(e) =>
+                                setRankingReasons((prev) => ({ ...prev, [f.id]: e.target.value }))
+                              }
+                              className="w-full mt-2 bg-slate-800 border border-slate-600 text-xs text-slate-300 placeholder-slate-600 rounded-lg px-3 py-2 resize-none focus:outline-none focus:border-slate-500"
+                            />
+
+                            {f.developer_rank && (
+                              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                <span className="text-xs text-blue-400">
+                                  Developer rank: {f.developer_rank}
+                                </span>
+                                {f.developer_email && (
+                                  <span className="text-xs bg-slate-700 border border-slate-600 text-slate-300 px-2 py-0.5 rounded-full">
+                                    👤 {f.developer_email}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+
+                    {aiRankedFindings.filter(
+                      (f) => (f.scanner_type || "unknown") === rankingTab
+                    ).length === 0 && (
+                      <div className="text-xs text-slate-500 text-center py-6">
+                        No {rankingTab === "zap" ? "ZAP web" : "Trivy container"} findings ranked yet.
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="text-xs text-slate-500 mt-0.5">
-                  #{f.id} · {f.severity} · {f.scanner}
-                </div>
-              </div>
-            </div>
+              )}
 
-            <div className="flex items-center gap-2 shrink-0">
-              <span
-                className={`text-xs font-bold px-2 py-0.5 rounded border ${
-                  f.ai_priority_label === "Critical"
-                    ? "bg-red-500/10 border-red-500/30 text-red-400"
-                    : f.ai_priority_label === "High"
-                    ? "bg-orange-500/10 border-orange-500/30 text-orange-400"
-                    : f.ai_priority_label === "Medium"
-                    ? "bg-yellow-500/10 border-yellow-500/30 text-yellow-400"
-                    : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
-                }`}
-              >
-                {f.ai_priority_label}
-              </span>
-
-              <button
-                onClick={() => moveFinding(index, "up")}
-                disabled={index === 0}
-                className="text-xs bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-300 px-2 py-1 rounded"
-              >
-                ↑
-              </button>
-
-              <button
-                onClick={() => moveFinding(index, "down")}
-                disabled={index === aiRankedFindings.length - 1}
-                className="text-xs bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-300 px-2 py-1 rounded"
-              >
-                ↓
-              </button>
-            </div>
-          </div>
-
-         <p className="text-xs text-slate-400 mt-2">
-  {f.ai_ranking_reason}
-</p>
-
-{/* Champ reason du développeur */}
-<textarea
-  rows={2}
-  placeholder="Why did you reorder this? (optional)"
-  value={rankingReasons[f.id] ?? f.developer_reason ?? ""}
-  onChange={(e) =>
-    setRankingReasons((prev) => ({ ...prev, [f.id]: e.target.value }))
-  }
-  className="w-full mt-2 bg-slate-800 border border-slate-600 text-xs text-slate-300 placeholder-slate-600 rounded-lg px-3 py-2 resize-none focus:outline-none focus:border-slate-500"
-/>
-
-{f.developer_rank && (
-  <div className="flex items-center gap-2 mt-1 flex-wrap">
-    <span className="text-xs text-blue-400">
-      Developer rank: {f.developer_rank}
-    </span>
-    {f.developer_email && (
-      <span className="text-xs bg-slate-700 border border-slate-600 text-slate-300 px-2 py-0.5 rounded-full">
-        👤 {f.developer_email}
-      </span>
-    )}
-  </div>
-)}
-        </div>
-      ))}
-    </div>
-  </div>
-)}
               {/* 🔥 AI PRIORITIZATION — multi-criteria model */}
               {prioritizedFindings.length > 0 && (
                 <div className="bg-slate-800/50 border border-purple-500/20 rounded-xl p-4">
@@ -621,102 +645,91 @@ const moveFinding = (index: number, direction: "up" | "down") => {
 
                   <div className="space-y-2">
                     {Array.from(
-  new Map(
-    prioritizedFindings.map((f) => [
-      `${f.title}-${f.scanner}`,
-      f,
-    ])
-  ).values()
-)
-  .slice(0, 15)
-  .map((f) => (
-                      <div key={f.id} className="bg-slate-800 border border-slate-700 rounded-lg px-4 py-3">
-                        {/* Header row */}
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="min-w-0 flex-1">
-                            <div className="text-sm font-semibold text-white truncate">{f.title}</div>
-                            <div className="text-xs text-slate-500 mt-0.5">
-                              #{f.id} · {f.severity} · {f.scanner}
+                      new Map(
+                        prioritizedFindings.map((f) => [`${f.title}-${f.scanner}`, f])
+                      ).values()
+                    )
+                      .slice(0, 15)
+                      .map((f) => (
+                        <div key={f.id} className="bg-slate-800 border border-slate-700 rounded-lg px-4 py-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="text-sm font-semibold text-white truncate">{f.title}</div>
+                              <div className="text-xs text-slate-500 mt-0.5">
+                                #{f.id} · {f.severity} · {f.scanner}
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0 ml-4">
+                              <div className="text-xl font-black text-purple-400 font-mono">{f.priority_score}</div>
+                              <span className={`text-xs font-bold px-2 py-0.5 rounded border ${
+                                f.priority_label === "Critical" ? "bg-red-500/10 border-red-500/30 text-red-400"
+                                : f.priority_label === "High" ? "bg-orange-500/10 border-orange-500/30 text-orange-400"
+                                : f.priority_label === "Medium" ? "bg-yellow-500/10 border-yellow-500/30 text-yellow-400"
+                                : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                              }`}>
+                                {f.priority_label}
+                              </span>
                             </div>
                           </div>
-                          <div className="text-right shrink-0 ml-4">
-                            <div className="text-xl font-black text-purple-400 font-mono">{f.priority_score}</div>
-                            <span className={`text-xs font-bold px-2 py-0.5 rounded border ${
-                              f.priority_label === "Critical" ? "bg-red-500/10 border-red-500/30 text-red-400"
-                              : f.priority_label === "High" ? "bg-orange-500/10 border-orange-500/30 text-orange-400"
-                              : f.priority_label === "Medium" ? "bg-yellow-500/10 border-yellow-500/30 text-yellow-400"
-                              : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
-                            }`}>
-                              {f.priority_label}
-                            </span>
+
+                          <div className="w-full bg-slate-700 rounded-full h-1.5 mb-2">
+                            <div
+                              className={`h-1.5 rounded-full transition-all ${
+                                f.priority_score >= 85 ? "bg-red-500"
+                                : f.priority_score >= 65 ? "bg-orange-500"
+                                : f.priority_score >= 40 ? "bg-yellow-500"
+                                : "bg-emerald-500"
+                              }`}
+                              style={{ width: `${f.priority_score}%` }}
+                            />
+                          </div>
+
+                          {f.priority_reasons?.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {f.priority_reasons.map((r: string, i: number) => (
+                                <span key={i} className="text-xs bg-slate-700 text-slate-400 px-2 py-0.5 rounded-full">
+                                  {r}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="mt-3 pt-3 border-t border-slate-700/50">
+                            <div className="flex items-center justify-between gap-3 mb-2">
+                              <span className="text-xs font-semibold text-slate-400">Developer priority</span>
+                              {f.developer_priority && (
+                                <span className="text-xs bg-blue-500/10 border border-blue-500/30 text-blue-400 px-2 py-0.5 rounded-full">
+                                  Saved: {f.developer_priority}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {["Critical", "High", "Medium", "Low", "False Positive", "Accepted Risk"].map((priority) => (
+                                <button
+                                  key={priority}
+                                  disabled={savingFeedbackId === f.id}
+                                  onClick={() => saveDeveloperPriority(f, priority)}
+                                  className={`text-xs font-semibold px-2 py-1 rounded-lg border transition disabled:opacity-50 ${
+                                    f.developer_priority === priority
+                                      ? "bg-blue-500/20 border-blue-500/40 text-blue-300"
+                                      : priority === "Critical"
+                                      ? "bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20"
+                                      : priority === "High"
+                                      ? "bg-orange-500/10 border-orange-500/30 text-orange-400 hover:bg-orange-500/20"
+                                      : priority === "Medium"
+                                      ? "bg-yellow-500/10 border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/20"
+                                      : priority === "Low"
+                                      ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
+                                      : "bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600"
+                                  }`}
+                                >
+                                  {savingFeedbackId === f.id ? "Saving..." : priority}
+                                </button>
+                              ))}
+                            </div>
                           </div>
                         </div>
-
-                        {/* Progress bar */}
-                        <div className="w-full bg-slate-700 rounded-full h-1.5 mb-2">
-                          <div
-                            className={`h-1.5 rounded-full transition-all ${
-                              f.priority_score >= 85 ? "bg-red-500"
-                              : f.priority_score >= 65 ? "bg-orange-500"
-                              : f.priority_score >= 40 ? "bg-yellow-500"
-                              : "bg-emerald-500"
-                            }`}
-                            style={{ width: `${f.priority_score}%` }}
-                          />
-                        </div>
-
-                        {/* Reasons tags */}
-                        {f.priority_reasons?.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {f.priority_reasons.map((r: string, i: number) => (
-                              <span key={i} className="text-xs bg-slate-700 text-slate-400 px-2 py-0.5 rounded-full">
-                                {r}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                        <div className="mt-3 pt-3 border-t border-slate-700/50">
-  <div className="flex items-center justify-between gap-3 mb-2">
-    <span className="text-xs font-semibold text-slate-400">
-      Developer priority
-    </span>
-
-    {f.developer_priority && (
-      <span className="text-xs bg-blue-500/10 border border-blue-500/30 text-blue-400 px-2 py-0.5 rounded-full">
-        Saved: {f.developer_priority}
-      </span>
-    )}
-  </div>
-
-  <div className="flex flex-wrap gap-1.5">
-    {["Critical", "High", "Medium", "Low", "False Positive", "Accepted Risk"].map(
-      (priority) => (
-        <button
-          key={priority}
-          disabled={savingFeedbackId === f.id}
-          onClick={() => saveDeveloperPriority(f, priority)}
-          className={`text-xs font-semibold px-2 py-1 rounded-lg border transition disabled:opacity-50 ${
-            f.developer_priority === priority
-              ? "bg-blue-500/20 border-blue-500/40 text-blue-300"
-              : priority === "Critical"
-              ? "bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20"
-              : priority === "High"
-              ? "bg-orange-500/10 border-orange-500/30 text-orange-400 hover:bg-orange-500/20"
-              : priority === "Medium"
-              ? "bg-yellow-500/10 border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/20"
-              : priority === "Low"
-              ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
-              : "bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600"
-          }`}
-        >
-          {savingFeedbackId === f.id ? "Saving..." : priority}
-        </button>
-      ),
-    )}
-  </div>
-</div>
-                      </div>
-                    ))}
+                      ))}
                   </div>
                 </div>
               )}
@@ -744,7 +757,6 @@ const moveFinding = (index: number, direction: "up" | "down") => {
                   <div className="space-y-3">
                     {recommendations.map((rec) => (
                       <div key={rec.id} className="bg-slate-900 border border-slate-700 rounded-xl p-4">
-                        {/* Header */}
                         <div className="flex items-start justify-between gap-3 mb-3">
                           <div>
                             <div className="font-bold text-sm text-violet-300 mb-1">
@@ -764,7 +776,6 @@ const moveFinding = (index: number, direction: "up" | "down") => {
                           )}
                         </div>
 
-                        {/* Scores row */}
                         <div className="grid grid-cols-6 gap-4 w-full bg-slate-800/50 rounded-xl px-4 py-3 mb-3">
                           {rec.cvss_score && (
                             <div className="text-center">
