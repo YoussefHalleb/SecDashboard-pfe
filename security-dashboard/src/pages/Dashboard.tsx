@@ -85,7 +85,14 @@ export default function Dashboard() {
       alert("Approve failed");
     }
   };
+const normalizeScannerType = (f: any) => {
+  const value = (f.scanner_type || f.scanner || "").toLowerCase();
 
+  if (value.includes("zap") || value.includes("owasp")) return "zap";
+  if (value.includes("trivy")) return "trivy";
+
+  return "unknown";
+};
   const loadPerformance = async (repoId: number) => {
     setLoadingPerf(true);
     try {
@@ -508,8 +515,8 @@ export default function Dashboard() {
                   <div className="flex gap-2 mb-4">
                     {(["zap", "trivy"] as const).map((tab) => {
                       const count = aiRankedFindings.filter(
-                        (f) => (f.scanner_type || "unknown") === tab
-                      ).length;
+  (f) => normalizeScannerType(f) === tab
+).length;
                       return (
                         <button
                           key={tab}
@@ -534,12 +541,12 @@ export default function Dashboard() {
                   {/* Liste filtrée par onglet */}
                   <div className="space-y-2">
                     {aiRankedFindings
-                      .filter((f) => (f.scanner_type || "unknown") === rankingTab)
+                      .filter((f) => normalizeScannerType(f) === rankingTab)
                       .map((f, index) => {
                         const globalIndex = aiRankedFindings.indexOf(f);
                         const filteredLength = aiRankedFindings.filter(
-                          (x) => (x.scanner_type || "unknown") === rankingTab
-                        ).length;
+  (x) => normalizeScannerType(x) === rankingTab
+).length;
                         return (
                           <div
                             key={f.id}
@@ -622,8 +629,8 @@ export default function Dashboard() {
                       })}
 
                     {aiRankedFindings.filter(
-                      (f) => (f.scanner_type || "unknown") === rankingTab
-                    ).length === 0 && (
+  (f) => normalizeScannerType(f) === rankingTab
+).length === 0 && (
                       <div className="text-xs text-slate-500 text-center py-6">
                         No {rankingTab === "zap" ? "ZAP web" : "Trivy container"} findings ranked yet.
                       </div>
