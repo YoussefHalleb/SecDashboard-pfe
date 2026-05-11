@@ -791,8 +791,9 @@ app.post("/api/ai/recommendations", async (req, res) => {
       return res.json({ items: [] });
     }
 
-    const selected = vulnerabilities;
-    const findingIds = selected.map((v) => v.id);
+   const MAX_ITEMS = 5;
+const selected = vulnerabilities.slice(0, MAX_ITEMS);
+const findingIds = selected.map((v) => v.id);
 
     // 1) Vérifier si les recommendations existent déjà
     const existing = await pool.query(
