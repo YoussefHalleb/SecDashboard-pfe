@@ -225,61 +225,63 @@ const normalizeScannerType = (f: any) => {
     }
   };
 
-  const generateAI = async () => {
-    if (!selectedRepo || loadingAI) return;
-    setLoadingAI(true);
-    setAiMessage("");
-    setAiSource("");
-    try {
-      const zapOnly = selectedRepo.vulnerabilities.filter((v) => v.scanner === "ZAP Scan");
-      const filtered = zapOnly.filter((v) =>
-  ["Critical", "High", "Medium", "Low"].includes(v.severity)
-);
-      const severityOrder: Record<string, number> = {
-  Critical: 1,
-  High: 2,
-  Medium: 3,
-  Low: 4,
-};
+ const generateAI = async () => {
+  if (!selectedRepo || loadingAI) return;
+  setLoadingAI(true);
+  setAiMessage("");
+  setAiSource("");
 
-const sorted = [...filtered].sort((a, b) => {
-  return (severityOrder[a.severity] || 99) - (severityOrder[b.severity] || 99);
-});
-      const limited = sorted;
+  try {
+    const zapOnly = selectedRepo.vulnerabilities.filter(
+      (v) => v.scanner === "ZAP Scan"
+    );
 
-      if (limited.length === 0) {
-        setRecommendations([]);
-        setAiMessage("No High or Medium ZAP vulnerabilities found.");
-        setLoadingAI(false);
-        return;
-      }
+    const filtered = zapOnly.filter(
+      (v) => v.severity === "High" || v.severity === "Medium"
+    );
 
-      const res = await api.post("/api/ai/recommendations", {
-        product: selectedRepo.name,
-        vulnerabilities: limited.map((v) => ({
-          id: v.id,
-          title: v.title,
-          severity: v.severity,
-          scanner: v.scanner,
-          description: v.description || "",
-        })),
-      });
+    const sorted = [...filtered].sort((a, b) => {
+      if (a.severity === b.severity) return 0;
+      return a.severity === "High" ? -1 : 1;
+    });
 
-      const items: Recommendation[] = res.data.items || [];
-      const source: "generated" | "database" | "" = res.data.source || "";
-      setRecommendations(items);
-      setAiSource(source);
+    const limited = sorted.slice(0, 7);
 
-      if (items.length === 0) setAiMessage("AI returned no items.");
-      else if (source === "generated") setAiMessage("AI recommendations generated and saved.");
-      else if (source === "database") setAiMessage("Existing AI recommendations loaded from database.");
-    } catch (err) {
-      console.error(err);
-      setAiMessage("Failed to generate AI recommendations");
-    } finally {
+    if (limited.length === 0) {
+      setRecommendations([]);
+      setAiMessage("No High or Medium ZAP vulnerabilities found.");
       setLoadingAI(false);
+      return;
     }
-  };
+
+    const res = await api.post("/api/ai/recommendations", {
+      product: selectedRepo.name,
+      vulnerabilities: limited.map((v) => ({
+        id: v.id,
+        title: v.title,
+        severity: v.severity,
+        scanner: v.scanner,
+        description: v.description || "",
+      })),
+    });
+
+    const items: Recommendation[] = res.data.items || [];
+    const source: "generated" | "database" | "" = res.data.source || "";
+    setRecommendations(items);
+    setAiSource(source);
+
+    if (items.length === 0) setAiMessage("AI returned no items.");
+    else if (source === "generated")
+      setAiMessage("AI recommendations generated and saved.");
+    else if (source === "database")
+      setAiMessage("Existing AI recommendations loaded from database.");
+  } catch (err) {
+    console.error(err);
+    setAiMessage("Failed to generate AI recommendations");
+  } finally {
+    setLoadingAI(false);
+  }
+};
 
   if (isLoading)
     return (
