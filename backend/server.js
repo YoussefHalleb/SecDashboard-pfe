@@ -563,7 +563,7 @@ app.post("/api/products/:id/ai-from-zap", async (req, res) => {
       return res.json({ items: [], stats: {}, summary: "No findings parsed" });
     }
 
-    const selected = findings.slice(0, 10);
+    const selected = findings;
 
     const prompt = `
 You are a senior Application Security Engineer analyzing vulnerabilities from an OWASP ZAP report.
@@ -791,8 +791,7 @@ app.post("/api/ai/recommendations", async (req, res) => {
       return res.json({ items: [] });
     }
 
-    const MAX_ITEMS = 5;
-    const selected = vulnerabilities.slice(0, MAX_ITEMS);
+    const selected = vulnerabilities;
     const findingIds = selected.map((v) => v.id);
 
     // 1) Vérifier si les recommendations existent déjà
@@ -1033,8 +1032,7 @@ app.post("/api/ai/analyze", async (req, res) => {
       return res.json({ items: [] });
     }
 
-    const MAX_ITEMS = 5;
-    const selected = vulnerabilities.slice(0, MAX_ITEMS);
+    const selected = vulnerabilities;
     const findingIds = selected.map((v) => v.id);
 
     const existing = await client.query(
