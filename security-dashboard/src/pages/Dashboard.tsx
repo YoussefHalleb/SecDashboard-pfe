@@ -232,12 +232,20 @@ const normalizeScannerType = (f: any) => {
     setAiSource("");
     try {
       const zapOnly = selectedRepo.vulnerabilities.filter((v) => v.scanner === "ZAP Scan");
-      const filtered = zapOnly.filter((v) => v.severity === "High" || v.severity === "Medium");
-      const sorted = [...filtered].sort((a, b) => {
-        if (a.severity === b.severity) return 0;
-        return a.severity === "High" ? -1 : 1;
-      });
-      const limited = sorted.slice(0, 7);
+      const filtered = zapOnly.filter((v) =>
+  ["Critical", "High", "Medium", "Low"].includes(v.severity)
+);
+      const severityOrder: Record<string, number> = {
+  Critical: 1,
+  High: 2,
+  Medium: 3,
+  Low: 4,
+};
+
+const sorted = [...filtered].sort((a, b) => {
+  return (severityOrder[a.severity] || 99) - (severityOrder[b.severity] || 99);
+});
+      const limited = sorted;
 
       if (limited.length === 0) {
         setRecommendations([]);
