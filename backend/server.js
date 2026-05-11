@@ -1033,7 +1033,8 @@ app.post("/api/ai/analyze", async (req, res) => {
       return res.json({ items: [] });
     }
 
-    const selected = vulnerabilities;
+    const MAX_ITEMS = 5;
+const selected = vulnerabilities.slice(0, MAX_ITEMS);
     const findingIds = selected.map((v) => v.id);
 
     const existing = await client.query(
