@@ -8,6 +8,7 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const { spawn } = require("child_process");
+const { createJiraIssue } = require("./jiraClient");
 const { callGeminiWithGrounding, callGemini } = require("./vertexClient");
 const { parseZapHtmlFile } = require("./zapParser");
 const { getSecret } = require("./secretManager");
