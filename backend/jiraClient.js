@@ -55,7 +55,7 @@ async function createJiraIssue({ recommendation, finding, approvedByEmail }) {
     fields: {
       project:     { key: projectKey },
       summary:     `[SEC] ${title}`,
-      issuetype:   { name: "Bug" },
+      issuetype: { name: "Task" },
       priority:    { name: PRIORITY_MAP[recommendation.priority] || "Medium" },
       description: buildJiraDescription(recommendation, finding),
       labels,
