@@ -20,6 +20,9 @@ interface Recommendation {
   user_interaction?: string;
   owasp_category?: string;
   code_fix_example?: string;
+  jira_issue_key?: string;
+  jira_issue_url?: string;
+  jira_pending?: boolean;
 }
 interface Vulnerability {
   id: number;
@@ -73,22 +76,68 @@ const [trivyMLMessage, setTrivyMLMessage] = useState("");
     },
   });
 
-  const approve = async (recId: string) => {
-    try {
-      const res = await api.post(`/api/recommendations/${recId}/approve`);
-      const updated: Recommendation = res.data;
+ const approve = async (recId: string) => {
+  try {
+    const res = await api.post(`/api/recommendations/${recId}/approve`);
+    const updated: Recommendation = res.data;
+
+    setRecommendations((prev) =>
+      prev.map((r) => {
+        if (r.finding_id === updated.finding_id) {
+          if (r.id === updated.id) {
+            return { ...r, status: "approved", jira_pending: true };
+          }
+          return { ...r, status: "proposed" };
+        }
+        return r;
+      })
+    );
+
+    let attempts = 0;
+    const poll = setInterval(async () => {
+      attempts++;
+      try {
+        const check = await api.get(`/api/findings/${updated.finding_id}/recommendations`);
+        const fresh = (check.data as Recommendation[]).find((r) => r.id === recId);
+        if (fresh?.jira_issue_key) {
+          setRecommendations((prev) =>
+            prev.map((r) =>
+              r.id === recId
+                ? { ...r, jira_issue_key: fresh.jira_issue_key, jira_issue_url: fresh.jira_issue_url, jira_pending: false }
+                : r
+            )
+          );
+          clearInterval(poll);
+        }
+      } catch (_) {}
+      if (attempts >= 10) clearInterval(poll);
+    }, 1000);
+
+  } catch (e) {
+    console.error(e);
+    alert("Approve failed");
+  }
+};
+
+  const retryJira = async (recId: string) => {
+  try {
+    const res = await api.post(`/api/recommendations/${recId}/create-jira`);
+    const data = res.data;
+    if (data.jira_issue_key) {
       setRecommendations((prev) =>
         prev.map((r) =>
-          r.finding_id === updated.finding_id
-            ? { ...r, status: r.id === updated.id ? "approved" : "proposed" }
-            : r,
-        ),
+          r.id === recId
+            ? { ...r, jira_issue_key: data.jira_issue_key, jira_issue_url: data.jira_issue_url, jira_pending: false }
+            : r
+        )
       );
-    } catch (e) {
-      console.error(e);
-      alert("Approve failed");
     }
-  };
+  } catch (e) {
+    console.error(e);
+    alert("Jira ticket creation failed");
+  }
+};
+  
 const normalizeScannerType = (f: any) => {
   const value = (f.scanner_type || f.scanner || "").toLowerCase();
 
@@ -1046,10 +1095,42 @@ const runTrivyMLRanking = async () => {
                         )}
 
                         <div className="flex items-center gap-2 pt-2 border-t border-slate-700/50 mt-3">
-                          {rec.status === "approved" ? (
-                            <span className="text-xs bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-1 rounded-lg">
-                              ✓ Approved
-                            </span>
+                         {rec.status === "approved" ? (
+  <div className="flex items-center gap-2 flex-wrap">
+    <span className="text-xs bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-1 rounded-lg">
+      ✓ Approved
+    </span>
+
+    {rec.jira_pending && !rec.jira_issue_key && (
+      <span className="text-xs text-slate-500 flex items-center gap-1">
+        <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+        </svg>
+        Creating Jira ticket…
+      </span>
+    )}
+
+    {rec.jira_issue_key && rec.jira_issue_url && (
+        <a
+        href={rec.jira_issue_url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-xs bg-blue-500/10 border border-blue-500/30 text-blue-400 hover:bg-blue-500/20 px-2 py-1 rounded-lg transition flex items-center gap-1"
+      >
+        🔗 {rec.jira_issue_key}
+      </a>
+    )}
+
+    {rec.status === "approved" && !rec.jira_issue_key && !rec.jira_pending && (
+      <button
+        onClick={() => retryJira(rec.id)}
+        className="text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 px-2 py-1 rounded-lg transition"
+      >
+        ↺ Retry Jira
+      </button>
+    )}
+  </div>
                           ) : rec.status === "rejected" ? (
                             <span className="text-xs bg-slate-700 text-slate-500 px-2 py-1 rounded-lg">
                               Rejected
