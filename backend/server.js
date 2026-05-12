@@ -2137,10 +2137,11 @@ app.post(
   "/api/recommendations/:id/approve",
   authMiddleware,
   async (req, res) => {
-    const recId  = req.params.id;
+    const recId = req.params.id;
     const userId = req.user.sub;
 
     const client = await pool.connect();
+
     try {
       await client.query("BEGIN");
 
@@ -2158,11 +2159,12 @@ app.post(
       }
 
       const rec = recResult.rows[0];
+
       const finding = {
-        title:    rec.title,
+        title: rec.title,
         severity: rec.severity,
-        scanner:  rec.scanner,
-        url:      rec.url,
+        scanner: rec.scanner,
+        url: rec.url,
       };
 
       await client.query(
@@ -2184,10 +2186,8 @@ app.post(
 
       const approvedRec = updated.rows[0];
 
-      // Répondre immédiatement au frontend
       res.json({ ...approvedRec, jira_pending: true });
 
-      // Ne pas recréer si ticket Jira existe déjà
       if (rec.jira_issue_key) return;
 
       const userResult = await pool.query(
@@ -2205,8 +2205,8 @@ app.post(
 
           await pool.query(
             `UPDATE finding_recommendations
-             SET jira_issue_key  = $1,
-                 jira_issue_url  = $2,
+             SET jira_issue_key = $1,
+                 jira_issue_url = $2,
                  jira_created_at = now()
              WHERE id = $3`,
             [issueKey, issueUrl, recId]
@@ -2214,10 +2214,13 @@ app.post(
 
           console.log(`✅ Jira ticket created: ${issueKey}`);
         } catch (jiraErr) {
-          console.error("Jira ticket creation failed:", jiraErr.message);
+          console.error("Jira ticket creation failed:", {
+            message: jiraErr.message,
+            status: jiraErr.response?.status,
+            data: jiraErr.response?.data,
+          });
         }
       });
-
     } catch (e) {
       await client.query("ROLLBACK");
       res.status(500).json({ error: "Approve failed", details: e.message });
@@ -2280,8 +2283,16 @@ app.post(
       res.json({ success: true, jira_issue_key: issueKey, jira_issue_url: issueUrl });
 
     } catch (e) {
-      console.error("Manual Jira create error:", e.message);
-      res.status(500).json({ error: "Failed to create Jira ticket", details: e.message });
+console.error("Manual Jira create error:", {
+  message: e.message,
+  status: e.response?.status,
+  data: e.response?.data,
+});
+
+res.status(500).json({
+  error: "Failed to create Jira ticket",
+  details: e.response?.data || e.message,
+});
     }
   }
 );
