@@ -2135,51 +2135,155 @@ function priorityLabel(score) {
 
 app.post(
   "/api/recommendations/:id/approve",
-
+  authMiddleware,
   async (req, res) => {
-    const recId = req.params.id;
+    const recId  = req.params.id;
     const userId = req.user.sub;
 
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
 
-      const rec = await client.query(
-        `SELECT id, finding_id FROM finding_recommendations WHERE id = $1`,
-        [recId],
+      const recResult = await client.query(
+        `SELECT r.*, f.title, f.severity, f.scanner, f.url
+         FROM finding_recommendations r
+         JOIN findings f ON f.id = r.finding_id
+         WHERE r.id = $1`,
+        [recId]
       );
-      if (rec.rowCount === 0) {
+
+      if (recResult.rowCount === 0) {
         await client.query("ROLLBACK");
         return res.status(404).json({ error: "Recommendation not found" });
       }
 
-      const findingId = rec.rows[0].finding_id;
+      const rec = recResult.rows[0];
+      const finding = {
+        title:    rec.title,
+        severity: rec.severity,
+        scanner:  rec.scanner,
+        url:      rec.url,
+      };
 
-      // remettre à proposed l'ancienne approuvée (si existe)
       await client.query(
         `UPDATE finding_recommendations
-       SET status='proposed', approved_by=NULL, approved_at=NULL
-       WHERE finding_id=$1 AND status='approved'`,
-        [findingId],
+         SET status = 'proposed', approved_by = NULL, approved_at = NULL
+         WHERE finding_id = $1 AND status = 'approved'`,
+        [rec.finding_id]
       );
 
       const updated = await client.query(
         `UPDATE finding_recommendations
-       SET status='approved', approved_by=$2, approved_at=now()
-       WHERE id=$1
-       RETURNING *`,
-        [recId, userId],
+         SET status = 'approved', approved_by = $2, approved_at = now()
+         WHERE id = $1
+         RETURNING *`,
+        [recId, userId]
       );
 
       await client.query("COMMIT");
-      res.json(updated.rows[0]);
+
+      const approvedRec = updated.rows[0];
+
+      // Répondre immédiatement au frontend
+      res.json({ ...approvedRec, jira_pending: true });
+
+      // Ne pas recréer si ticket Jira existe déjà
+      if (rec.jira_issue_key) return;
+
+      const userResult = await pool.query(
+        `SELECT email FROM users WHERE id = $1`,
+        [userId]
+      );
+
+      setImmediate(async () => {
+        try {
+          const { issueKey, issueUrl } = await createJiraIssue({
+            recommendation: approvedRec,
+            finding,
+            approvedByEmail: userResult.rows[0]?.email,
+          });
+
+          await pool.query(
+            `UPDATE finding_recommendations
+             SET jira_issue_key  = $1,
+                 jira_issue_url  = $2,
+                 jira_created_at = now()
+             WHERE id = $3`,
+            [issueKey, issueUrl, recId]
+          );
+
+          console.log(`✅ Jira ticket created: ${issueKey}`);
+        } catch (jiraErr) {
+          console.error("Jira ticket creation failed:", jiraErr.message);
+        }
+      });
+
     } catch (e) {
       await client.query("ROLLBACK");
       res.status(500).json({ error: "Approve failed", details: e.message });
     } finally {
       client.release();
     }
-  },
+  }
+);
+
+// Créer ticket Jira manuellement si auto a échoué
+app.post(
+  "/api/recommendations/:id/create-jira",
+  authMiddleware,
+  async (req, res) => {
+    const recId = req.params.id;
+    try {
+      const { rows } = await pool.query(
+        `SELECT r.*, f.title, f.severity, f.scanner, f.url
+         FROM finding_recommendations r
+         JOIN findings f ON f.id = r.finding_id
+         WHERE r.id = $1 AND r.status = 'approved'`,
+        [recId]
+      );
+
+      if (!rows[0]) {
+        return res.status(404).json({ error: "Approved recommendation not found" });
+      }
+
+      const rec = rows[0];
+
+      if (rec.jira_issue_key) {
+        return res.json({
+          success: true,
+          already_exists: true,
+          jira_issue_key: rec.jira_issue_key,
+          jira_issue_url: rec.jira_issue_url,
+        });
+      }
+
+      const userResult = await pool.query(
+        `SELECT email FROM users WHERE id = $1`,
+        [req.user.sub]
+      );
+
+      const { issueKey, issueUrl } = await createJiraIssue({
+        recommendation: rec,
+        finding: { title: rec.title, severity: rec.severity, scanner: rec.scanner, url: rec.url },
+        approvedByEmail: userResult.rows[0]?.email,
+      });
+
+      await pool.query(
+        `UPDATE finding_recommendations
+         SET jira_issue_key  = $1,
+             jira_issue_url  = $2,
+             jira_created_at = now()
+         WHERE id = $3`,
+        [issueKey, issueUrl, recId]
+      );
+
+      res.json({ success: true, jira_issue_key: issueKey, jira_issue_url: issueUrl });
+
+    } catch (e) {
+      console.error("Manual Jira create error:", e.message);
+      res.status(500).json({ error: "Failed to create Jira ticket", details: e.message });
+    }
+  }
 );
 
 app.post(
