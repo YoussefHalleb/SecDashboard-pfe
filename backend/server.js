@@ -2415,7 +2415,18 @@ async function loadRuntimeSecrets() {
   if (!process.env.DEFECTDOJO_API_KEY) {
     process.env.DEFECTDOJO_API_KEY = await getSecret("defectdojo-api-key");
   }
-
+  if (!process.env.JIRA_BASE_URL) {
+    process.env.JIRA_BASE_URL = await getSecret("jira-base-url");
+  }
+  if (!process.env.JIRA_EMAIL) {
+    process.env.JIRA_EMAIL = await getSecret("jira-email");
+  }
+  if (!process.env.JIRA_API_TOKEN) {
+    process.env.JIRA_API_TOKEN = await getSecret("jira-api-token");
+  }
+  if (!process.env.JIRA_PROJECT_KEY) {
+    process.env.JIRA_PROJECT_KEY = await getSecret("jira-project-key");
+  }
   console.log("✅ Runtime secrets loaded");
   console.log("JWT_SECRET length:", process.env.JWT_SECRET?.length || 0);
   console.log("GITHUB_TOKEN length:", process.env.GITHUB_TOKEN?.length || 0);
