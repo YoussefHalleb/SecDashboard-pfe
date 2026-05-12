@@ -1210,7 +1210,41 @@ app.get("/api/findings/:id/ai-analysis", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch AI analysis" });
   }
 });
+function predictTrivyRankBatchWithML(findings) {
+  return new Promise((resolve) => {
+    const python = spawn("python", ["ppredict_priority_batch.py"], {
+      cwd: __dirname,
+    });
 
+    let output = "";
+    let errorOutput = "";
+
+    python.stdout.on("data", (data) => {
+      output += data.toString();
+    });
+
+    python.stderr.on("data", (data) => {
+      errorOutput += data.toString();
+    });
+
+    python.stdin.write(JSON.stringify(findings));
+    python.stdin.end();
+
+    python.on("close", (code) => {
+      if (code !== 0) {
+        console.error("Trivy ML batch prediction failed:", errorOutput);
+        return resolve([]);
+      }
+
+      try {
+        return resolve(JSON.parse(output));
+      } catch (e) {
+        console.error("Invalid Trivy ML batch output:", output);
+        return resolve([]);
+      }
+    });
+  });
+}
 function predictPriorityBatchWithML(findings) {
   return new Promise((resolve) => {
     const python = spawn("python", ["predict_priority_batch.py"], {
@@ -1533,6 +1567,152 @@ app.get("/api/repositories/:id/developer-rank-feedback", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch developer ranking feedback" });
   }
 });
+
+app.post("/api/repositories/:id/trivy-ml-rank-run", async (req, res) => {
+  try {
+    const productId = Number(req.params.id);
+
+    const findingsResult = await pool.query(
+      `
+      SELECT
+        f.*,
+        r.ai_rank,
+        r.ai_priority_label,
+        r.ai_ranking_reason
+      FROM findings f
+      LEFT JOIN finding_ai_ranking r
+        ON r.finding_id = f.id
+      WHERE f.product_id = $1
+        AND (
+          f.scanner ILIKE '%trivy%'
+          OR f.title ILIKE 'CVE-%'
+        )
+      ORDER BY f.created_at DESC
+      `,
+      [productId]
+    );
+
+    const findings = findingsResult.rows;
+
+    if (!findings.length) {
+      return res.json({
+        success: true,
+        product_id: productId,
+        message: "No Trivy findings found",
+        count: 0,
+        items: [],
+      });
+    }
+
+    const mlInput = findings.map((f) => ({
+      id: f.id,
+      title: f.title,
+      severity: f.severity,
+      scanner: f.scanner,
+
+      ai_rank: f.ai_rank || 999,
+      ai_level: f.ai_priority_label || f.severity || "Low",
+      ai_reason: f.ai_ranking_reason || "",
+    }));
+
+    const mlResults = await predictTrivyRankBatchWithML(mlInput);
+
+    if (!mlResults.length) {
+      return res.status(500).json({
+        success: false,
+        error: "Trivy ML returned no results",
+      });
+    }
+
+    for (const item of mlResults) {
+      await pool.query(
+        `
+        INSERT INTO finding_trivy_ml_ranking (
+          finding_id,
+          product_id,
+          ml_rank,
+          ml_score,
+          ml_priority_label,
+          ml_reason,
+          updated_at
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,now())
+        ON CONFLICT (finding_id)
+        DO UPDATE SET
+          product_id = EXCLUDED.product_id,
+          ml_rank = EXCLUDED.ml_rank,
+          ml_score = EXCLUDED.ml_score,
+          ml_priority_label = EXCLUDED.ml_priority_label,
+          ml_reason = EXCLUDED.ml_reason,
+          updated_at = now()
+        `,
+        [
+          Number(item.finding_id || item.id),
+          productId,
+          Number(item.predicted_rank),
+          Number(item.ml_score),
+          item.ml_priority || "Low",
+          item.ml_reason || "",
+        ]
+      );
+    }
+
+    return res.json({
+      success: true,
+      product_id: productId,
+      count: mlResults.length,
+      message: "Trivy ML ranking completed",
+      items: mlResults,
+    });
+  } catch (error) {
+    console.error("Trivy ML rank run error:", error.message);
+    return res.status(500).json({
+      error: "Failed to run Trivy ML ranking",
+      details: error.message,
+    });
+  }
+});
+
+app.get("/api/repositories/:id/trivy-ml-rank-findings", async (req, res) => {
+  try {
+    const productId = Number(req.params.id);
+
+    const { rows } = await pool.query(
+      `
+      SELECT
+        f.*,
+        ml.ml_rank,
+        ml.ml_score,
+        ml.ml_priority_label,
+        ml.ml_reason,
+        ml.updated_at AS ml_updated_at
+      FROM findings f
+      JOIN finding_trivy_ml_ranking ml
+        ON ml.finding_id = f.id
+      WHERE f.product_id = $1
+      ORDER BY ml.ml_rank ASC
+      `,
+      [productId]
+    );
+
+    return res.json({
+      product_id: productId,
+      count: rows.length,
+      source: "trivy-ml-ranking",
+      items: rows,
+    });
+  } catch (error) {
+    console.error("Get Trivy ML ranking error:", error.message);
+    return res.status(500).json({
+      error: "Failed to fetch Trivy ML ranking",
+      details: error.message,
+    });
+  }
+});
+
+
+
+
 
 app.post("/api/repositories/:id/ai-rank-run", async (req, res) => {
   try {
