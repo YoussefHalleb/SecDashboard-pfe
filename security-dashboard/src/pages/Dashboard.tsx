@@ -58,7 +58,7 @@ const [trivyMLMessage, setTrivyMLMessage] = useState("");
   const [loadingPerf, setLoadingPerf] = useState(false);
   const [savingFeedbackId, setSavingFeedbackId] = useState<number | null>(null);
   const [feedbackMessage, setFeedbackMessage] = useState<string>("");
-
+  const [jiraAssigneeId, setJiraAssigneeId] = useState<string>("");
   const handleLogout = async () => {
     try {
       await logout();
@@ -78,7 +78,9 @@ const [trivyMLMessage, setTrivyMLMessage] = useState("");
 
  const approve = async (recId: string) => {
   try {
-    const res = await api.post(`/api/recommendations/${recId}/approve`);
+    const res = await api.post(`/api/recommendations/${recId}/approve`, {
+  jira_assignee_id: jiraAssigneeId || undefined,
+});
     const updated: Recommendation = res.data;
 
     setRecommendations((prev) =>
@@ -529,6 +531,18 @@ const runTrivyMLRanking = async () => {
                 <p className="text-slate-500 text-xs">Vulnerability Details</p>
               </div>
               <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
+  <label className="text-xs text-slate-400 whitespace-nowrap">
+    Jira Assignee ID
+  </label>
+  <input
+    type="text"
+    value={jiraAssigneeId}
+    onChange={(e) => setJiraAssigneeId(e.target.value)}
+    placeholder="ex: 5b10a2844c20165700ede21g"
+    className="bg-slate-800 border border-slate-600 text-xs text-slate-200 placeholder-slate-600 rounded-lg px-2.5 py-1.5 w-52 focus:outline-none focus:border-slate-400"
+  />
+</div>
                 <button
                   onClick={() => window.open(`/api/products/${selectedRepo.id}/zap-report`, "_blank")}
                   className="flex items-center gap-1.5 bg-orange-500/10 border border-orange-500/30 text-orange-400 hover:bg-orange-500/20 text-xs font-semibold px-3 py-1.5 rounded-lg transition"
