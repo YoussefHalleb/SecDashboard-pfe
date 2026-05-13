@@ -204,7 +204,36 @@ app.post("/auth/login", async (req, res) => {
 app.get("/auth/me", authMiddleware, async (req, res) => {
   res.json({ id: req.user.sub, email: req.user.email, role: req.user.role });
 });
+// LIST ALL USERS
+app.get("/api/admin/users", authMiddleware, requireRole("admin"), async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT id, email, role, created_at FROM users ORDER BY created_at DESC`
+  );
+  res.json(rows);
+});
 
+// CHANGE USER ROLE
+app.patch("/api/admin/users/:id/role", authMiddleware, requireRole("admin"), async (req, res) => {
+  const { role } = req.body;
+  if (!["admin", "developer"].includes(role)) {
+    return res.status(400).json({ error: "Invalid role" });
+  }
+  const { rows } = await pool.query(
+    `UPDATE users SET role = $1 WHERE id = $2 RETURNING id, email, role`,
+    [role, req.params.id]
+  );
+  res.json(rows[0]);
+});
+
+// DELETE USER
+app.delete("/api/admin/users/:id", authMiddleware, requireRole("admin"), async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM users WHERE id = $1`, [req.params.id]);
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: "Delete user failed" });
+  }
+});
 // LOGOUT
 app.post("/auth/logout", (req, res) => {
   res.clearCookie("token", { httpOnly: true, sameSite: "lax", secure: false });
