@@ -34,7 +34,7 @@ function buildJiraDescription(rec, finding) {
   return lines.join("\n");
 }
 
-async function createJiraIssue({ recommendation, finding, approvedByEmail }) {
+async function createJiraIssue({ recommendation, finding, approvedByEmail, jiraAssigneeId }) {
   const baseUrl    = process.env.JIRA_BASE_URL;
   const email      = process.env.JIRA_EMAIL;
   const apiToken   = process.env.JIRA_API_TOKEN;
@@ -59,6 +59,7 @@ async function createJiraIssue({ recommendation, finding, approvedByEmail }) {
       priority:    { name: PRIORITY_MAP[recommendation.priority] || "Medium" },
       description: buildJiraDescription(recommendation, finding),
       labels,
+      ...(jiraAssigneeId ? { assignee: { accountId: jiraAssigneeId } } : {}),
     },
   };
 
