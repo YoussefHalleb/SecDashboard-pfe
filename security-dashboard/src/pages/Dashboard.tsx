@@ -67,7 +67,15 @@ const [trivyMLMessage, setTrivyMLMessage] = useState("");
       console.error(e);
     }
   };
+const { data: me } = useQuery({
+  queryKey: ["me"],
+  queryFn: async () => {
+    const res = await api.get("/auth/me");
+    return res.data;
+  },
+});
 
+const isAdmin = me?.role === "admin";
   const { data = [], isLoading } = useQuery({
     queryKey: ["repositories"],
     queryFn: async () => {
@@ -1151,18 +1159,20 @@ const runTrivyMLRanking = async () => {
                             </span>
                           ) : (
                             <>
-                              <button
-                                onClick={() => approve(rec.id)}
-                                className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded-lg transition"
-                              >
-                                Approve
-                              </button>
-                              <button
-                                onClick={() => reject(rec.id)}
-                                className="text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1 rounded-lg transition"
-                              >
-                                Reject
-                              </button>
+                              {isAdmin && (
+  <button
+    onClick={() => approve(rec.id)}
+    className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded-lg transition"
+  >
+    Approve
+  </button>
+)}
+<button
+  onClick={() => reject(rec.id)}
+  className="text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1 rounded-lg transition"
+>
+  Reject
+</button>
                               <span className="text-xs text-violet-500 ml-auto">Proposed</span>
                             </>
                           )}
