@@ -59,6 +59,9 @@ const [trivyMLMessage, setTrivyMLMessage] = useState("");
   const [savingFeedbackId, setSavingFeedbackId] = useState<number | null>(null);
   const [feedbackMessage, setFeedbackMessage] = useState<string>("");
   const [jiraAssigneeId, setJiraAssigneeId] = useState<string>("");
+  const [showUserManager, setShowUserManager] = useState(false);
+  const [users, setUsers] = useState<any[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
   const handleLogout = async () => {
     try {
       await logout();
@@ -308,7 +311,40 @@ const runTrivyMLRanking = async () => {
       setFeedbackMessage("Failed to save developer order.");
     }
   };
+const loadUsers = async () => {
+  setLoadingUsers(true);
+  try {
+    const res = await api.get("/api/admin/users");
+    setUsers(res.data);
+  } catch (e) {
+    console.error(e);
+  } finally {
+    setLoadingUsers(false);
+  }
+};
 
+const changeUserRole = async (userId: number, newRole: string) => {
+  try {
+    await api.patch(`/api/admin/users/${userId}/role`, { role: newRole });
+    setUsers((prev) =>
+      prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u))
+    );
+  } catch (e) {
+    console.error(e);
+    alert("Failed to change role");
+  }
+};
+
+const deleteUser = async (userId: number) => {
+  if (!confirm("Supprimer cet utilisateur ?")) return;
+  try {
+    await api.delete(`/api/admin/users/${userId}`);
+    setUsers((prev) => prev.filter((u) => u.id !== userId));
+  } catch (e) {
+    console.error(e);
+    alert("Failed to delete user");
+  }
+};
   const deleteRepo = async (repoId: number) => {
     if (!confirm("Supprimer ce repository et toutes ses données ?")) return;
     try {
@@ -403,12 +439,22 @@ const runTrivyMLRanking = async () => {
             <span className="font-bold text-white tracking-tight">DevSecOps</span>
             <span className="text-slate-600 text-sm hidden sm:block">/ Dashboard</span>
           </div>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 text-slate-400 hover:text-white text-sm px-3 py-1.5 rounded-lg hover:bg-slate-800 transition"
-          >
-            <span>⎋</span> Logout
-          </button>
+         <div className="flex items-center gap-2">
+  {isAdmin && (
+    <button
+      onClick={() => { setShowUserManager(true); loadUsers(); }}
+      className="flex items-center gap-2 text-slate-400 hover:text-white text-sm px-3 py-1.5 rounded-lg hover:bg-slate-800 transition"
+    >
+      👥 Users
+    </button>
+  )}
+  <button
+    onClick={handleLogout}
+    className="flex items-center gap-2 text-slate-400 hover:text-white text-sm px-3 py-1.5 rounded-lg hover:bg-slate-800 transition"
+  >
+    <span>⎋</span> Logout
+  </button>
+</div>
         </div>
       </nav>
 
@@ -1295,6 +1341,77 @@ const runTrivyMLRanking = async () => {
                 );
               })}
 
+            </div>
+          </div>
+        </div>
+      )}
+       {/* Modal User Manager */}
+      {showUserManager && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+          <div className="bg-slate-900 border border-slate-700 w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[80vh]">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 shrink-0">
+              <div>
+                <h2 className="font-bold text-white text-lg">👥 User Manager</h2>
+                <p className="text-slate-500 text-xs">Gérer les rôles et accès</p>
+              </div>
+              <button
+                onClick={() => setShowUserManager(false)}
+                className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition text-lg"
+              >
+                ×
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1 p-6">
+              {loadingUsers ? (
+                <div className="flex items-center gap-2 text-slate-400 text-sm">
+                  <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                  </svg>
+                  Loading users...
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {users.map((u) => (
+                    <div key={u.id} className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 flex items-center justify-between gap-4">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-semibold text-white truncate">{u.email}</div>
+                        <div className="text-xs text-slate-500 mt-0.5">
+                          Créé le {new Date(u.created_at).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded border ${
+                          u.role === "admin"
+                            ? "bg-violet-500/10 border-violet-500/30 text-violet-400"
+                            : "bg-slate-700 border-slate-600 text-slate-300"
+                        }`}>
+                          {u.role}
+                        </span>
+                        {u.id !== me?.id && (
+                          <button
+                            onClick={() => changeUserRole(u.id, u.role === "admin" ? "developer" : "admin")}
+                            className="text-xs bg-blue-500/10 border border-blue-500/30 text-blue-400 hover:bg-blue-500/20 px-2 py-1 rounded-lg transition"
+                          >
+                            {u.role === "admin" ? "→ Developer" : "→ Admin"}
+                          </button>
+                        )}
+                        {u.id !== me?.id && (
+                          <button
+                            onClick={() => deleteUser(u.id)}
+                            className="text-xs bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 px-2 py-1 rounded-lg transition"
+                          >
+                            🗑️
+                          </button>
+                        )}
+                        {u.id === me?.id && (
+                          <span className="text-xs text-slate-500 px-2">vous</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
