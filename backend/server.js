@@ -2187,6 +2187,9 @@ app.post(
       const approvedRec = updated.rows[0];
 
       res.json({ ...approvedRec, jira_pending: true });
+      const { jira_assignee_id } = req.body;
+
+   
 
       if (rec.jira_issue_key) return;
 
@@ -2201,6 +2204,7 @@ app.post(
             recommendation: approvedRec,
             finding,
             approvedByEmail: userResult.rows[0]?.email,
+            jiraAssigneeId: jira_assignee_id,
           });
 
           await pool.query(
