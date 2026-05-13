@@ -96,12 +96,21 @@ function signToken(user) {
   });
 }
 
-function authMiddleware(req, res, next) {
+async function authMiddleware(req, res, next) {
   const token = req.cookies?.token;
   if (!token) return res.status(401).json({ error: "Not authenticated" });
 
   try {
-    req.user = jwt.verify(token, process.env.JWT_SECRET); // {sub,email,iat,exp}
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    const { rows } = await pool.query(
+      `SELECT id, email, role FROM users WHERE id = $1`,
+      [decoded.sub]
+    );
+
+    if (!rows[0]) return res.status(401).json({ error: "User not found" });
+
+    req.user = { ...decoded, role: rows[0].role };
     next();
   } catch (e) {
     return res.status(401).json({ error: "Invalid token" });
@@ -111,7 +120,14 @@ function authMiddleware(req, res, next) {
 const headers = {
   Authorization: `Token ${DEFECTDOJO_TOKEN}`,
 };
-
+function requireRole(role) {
+  return (req, res, next) => {
+    if (req.user.role !== role) {
+      return res.status(403).json({ error: "Forbidden — admin only" });
+    }
+    next();
+  };
+}
 // REGISTER
 app.post("/auth/register", async (req, res) => {
   try {
@@ -185,9 +201,8 @@ app.post("/auth/login", async (req, res) => {
   }
 });
 
-// ME (qui est connecté ?)
 app.get("/auth/me", authMiddleware, async (req, res) => {
-  res.json({ id: req.user.sub, email: req.user.email });
+  res.json({ id: req.user.sub, email: req.user.email, role: req.user.role });
 });
 
 // LOGOUT
@@ -513,7 +528,7 @@ app.post("/api/products/:id/sync-zap-fields", async (req, res) => {
   }
 });
 
-app.delete("/api/products/:id", async (req, res) => {
+app.delete("/api/products/:id", authMiddleware, requireRole("admin"), async (req, res) => {
   const productId = req.params.id;
   const client = await pool.connect();
   try {
@@ -2136,6 +2151,7 @@ function priorityLabel(score) {
 app.post(
   "/api/recommendations/:id/approve",
   authMiddleware,
+  requireRole("admin"),
   async (req, res) => {
     const recId = req.params.id;
     const userId = req.user.sub;
@@ -2234,10 +2250,10 @@ app.post(
   }
 );
 
-// Créer ticket Jira manuellement si auto a échoué
 app.post(
   "/api/recommendations/:id/create-jira",
   authMiddleware,
+  requireRole("admin"),
   async (req, res) => {
     const recId = req.params.id;
     try {
