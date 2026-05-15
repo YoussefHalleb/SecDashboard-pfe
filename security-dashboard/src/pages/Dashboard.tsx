@@ -4,7 +4,7 @@ import { api, logout } from "../services/api";
 import PipelinePage from "./PipelinePage";
 
 interface Recommendation {
-  id: string;
+  id: string; 
   finding_id: number;
   content: string;
   status: RecommendationStatus;
