@@ -1471,51 +1471,35 @@ function chunkArray(array, size) {
   return chunks;
 }
 
-async function getDeveloperRankingFeedbackForVertex(productId, scannerType) {
-  const { rows } = await pool.query(
-    `
+async function getDeveloperRankingFeedbackForVertex(productId, scannerType, currentFindings = []) {
+  const titles = currentFindings.map(f => f.title || "");
+
+  const { rows } = await pool.query(`
     SELECT
-      f.id AS finding_id,
       f.title,
       f.severity,
       f.scanner,
-      f.description,
       f.url,
-      f.method,
-      f.parameter,
-      f.attack,
       f.evidence,
+      f.attack,
       f.cwe,
-
       d.ai_rank,
       d.ai_priority_label,
       d.developer_rank,
       d.developer_reason
-
     FROM developer_ranking_feedback d
-    JOIN findings f
-      ON f.id = d.finding_id
+    JOIN findings f ON f.id = d.finding_id
     WHERE d.product_id = $1
       AND (
         $2 = 'unknown'
         OR LOWER(COALESCE(f.scanner, '')) LIKE '%' || LOWER($2) || '%'
-        OR (
-          $2 = 'trivy'
-          AND (
-            LOWER(COALESCE(f.scanner, '')) LIKE '%trivy%'
-            OR f.title ILIKE 'CVE-%'
-          )
-        )
-        OR (
-          $2 = 'zap'
-          AND LOWER(COALESCE(f.scanner, '')) LIKE '%zap%'
-        )
       )
-    ORDER BY d.created_at DESC
-    LIMIT 30
-    `,
-    [Number(productId), scannerType]
-  );
+    ORDER BY
+      -- Prioritise les feedbacks proches du batch actuel
+      CASE WHEN f.title = ANY($3::text[]) THEN 0 ELSE 1 END,
+      d.created_at DESC
+    LIMIT 20
+  `, [Number(productId), scannerType, titles]);
 
   return rows;
 }
@@ -1551,26 +1535,18 @@ async function rankBatch(product, findings, scannerType) {
   const batches = chunkArray(findings, 15);
   let allRanking = [];
 
+  // ✅ passe les findings courants pour cibler le feedback pertinent
   const developerFeedback = await getDeveloperRankingFeedbackForVertex(
     product.id,
-    scannerType
+    scannerType,
+    findings // ← AJOUT
   );
 
   for (const batch of batches) {
-    const prompt = buildRankPrompt(
-      product,
-      batch,
-      scannerType,
-      developerFeedback
-    );
-
+    const prompt = buildRankPrompt(product, batch, scannerType, developerFeedback);
     const { raw } = await callGemini(prompt);
     const parsed = safeParseJSON(raw);
-
-    const batchRanking = Array.isArray(parsed.ordered_items)
-      ? parsed.ordered_items
-      : [];
-
+    const batchRanking = Array.isArray(parsed.ordered_items) ? parsed.ordered_items : [];
     allRanking.push(...batchRanking);
   }
 
@@ -1582,39 +1558,35 @@ async function rankBatch(product, findings, scannerType) {
 }
 
 function buildRankPrompt(product, batch, scannerType, developerFeedback = []) {
+  
   const developerFeedbackBlock = developerFeedback.length
     ? `
-Previous developer ranking corrections:
+===== DEVELOPER FEEDBACK (apply these learned rules) =====
 
 ${JSON.stringify(
-  developerFeedback.map((f) => ({
-    previous_finding_title: f.title,
-    previous_severity: f.severity,
-    previous_scanner: f.scanner,
-    previous_ai_rank: f.ai_rank,
-    previous_ai_priority_label: f.ai_priority_label,
-    corrected_developer_rank: f.developer_rank,
-    developer_reason: f.developer_reason,
-    evidence: f.evidence || "",
-    attack: f.attack || "",
+  developerFeedback.map(f => ({
+    title: f.title,
+    severity: f.severity,
+    evidence_present: !!f.evidence,
+    has_attack: !!f.attack,
     url: f.url || "",
     cwe: f.cwe || "",
+    ai_rank_was: f.ai_rank,
+    developer_corrected_to: f.developer_rank,
+    direction: f.developer_rank < f.ai_rank ? "PROMOTED" : "DEMOTED",
+    reason: f.developer_reason || "",
   })),
-  null,
-  2
+  null, 2
 )}
 
-How to use this feedback:
-- Learn the developer's ranking preference from corrected_developer_rank and developer_reason.
-- If a current finding is similar to a previous corrected finding, rank it according to the developer's logic.
-- If the previous AI rank was too high or too low compared to the developer rank, adjust similar findings accordingly.
-- Developer feedback is more important than the default rules when there is a conflict.
-- Do not copy old ranks blindly. Use the developer's reasoning to rank the current findings.
+Rules to extract from this feedback:
+- If developer PROMOTED a finding: similar findings (same severity/evidence/url pattern) should rank HIGHER.
+- If developer DEMOTED a finding: similar findings should rank LOWER.
+- developer reason explains WHY → apply that logic to current findings.
+- Developer corrections ALWAYS override default ranking rules.
+==========================================================
 `
-    : `
-No previous developer ranking corrections are available.
-Use only the default ranking rules.
-`;
+    : `No previous developer feedback. Use default ranking rules only.`;
 
   const baseRules = `
 Return ONLY valid JSON:
