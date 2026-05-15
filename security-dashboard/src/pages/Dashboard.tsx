@@ -52,6 +52,7 @@ export default function Dashboard() {
   const [aiSource, setAiSource] = useState<"" | "generated" | "database">("");
   const [perfResults, setPerfResults] = useState<any[]>([]);
   const [loadingPerf, setLoadingPerf] = useState(false);
+  const [loadingRankRun, setLoadingRankRun] = useState(false);
   const [savingFeedbackId, setSavingFeedbackId] = useState<number | null>(null);
   const [feedbackMessage, setFeedbackMessage] = useState<string>("");
   const [jiraAssigneeId, setJiraAssigneeId] = useState<string>("");
@@ -517,7 +518,7 @@ const deleteUser = async (userId: number) => {
   setAiMessage("");
   setRankingTab("zap");
   loadPerformance(repo.id);
-  await loadAiRanking(repo.id);
+  
 }}
                     className="flex-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 text-slate-300 hover:text-white text-sm font-semibold py-2.5 rounded-xl transition"
                   >
@@ -583,7 +584,46 @@ const deleteUser = async (userId: number) => {
                     <>🤖 AI Recommendations</>
                   )}
                 </button>
-
+<button
+  onClick={async () => {
+    if (!selectedRepo || loadingRankRun) return;
+    setLoadingRankRun(true);
+    try {
+      await api.post(`/api/repositories/${selectedRepo.id}/ai-rank-run`);
+      // Le ranking tourne en background côté serveur
+      // On poll toutes les 3s jusqu'à avoir des résultats
+      const poll = setInterval(async () => {
+        await loadAiRanking(selectedRepo.id);
+        if (aiRankedFindings.length > 0) {
+          clearInterval(poll);
+          setLoadingRankRun(false);
+        }
+      }, 3000);
+      // Timeout sécurité après 60s
+      setTimeout(() => {
+        clearInterval(poll);
+        setLoadingRankRun(false);
+      }, 60000);
+    } catch (e) {
+      console.error(e);
+      setLoadingRankRun(false);
+    }
+  }}
+  disabled={loadingRankRun}
+  className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-50 text-xs font-semibold px-3 py-1.5 rounded-lg transition"
+>
+  {loadingRankRun ? (
+    <>
+      <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+      </svg>
+      Ranking...
+    </>
+  ) : (
+    <>🔄 Run AI Ranking</>
+  )}
+</button>
                 <button
                   onClick={() => setSelectedRepo(null)}
                   className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition text-lg"
