@@ -1470,6 +1470,56 @@ function chunkArray(array, size) {
 
   return chunks;
 }
+
+async function getDeveloperRankingFeedbackForVertex(productId, scannerType) {
+  const { rows } = await pool.query(
+    `
+    SELECT
+      f.id AS finding_id,
+      f.title,
+      f.severity,
+      f.scanner,
+      f.description,
+      f.url,
+      f.method,
+      f.parameter,
+      f.attack,
+      f.evidence,
+      f.cwe,
+
+      d.ai_rank,
+      d.ai_priority_label,
+      d.developer_rank,
+      d.developer_reason
+
+    FROM developer_ranking_feedback d
+    JOIN findings f
+      ON f.id = d.finding_id
+    WHERE d.product_id = $1
+      AND (
+        $2 = 'unknown'
+        OR LOWER(COALESCE(f.scanner, '')) LIKE '%' || LOWER($2) || '%'
+        OR (
+          $2 = 'trivy'
+          AND (
+            LOWER(COALESCE(f.scanner, '')) LIKE '%trivy%'
+            OR f.title ILIKE 'CVE-%'
+          )
+        )
+        OR (
+          $2 = 'zap'
+          AND LOWER(COALESCE(f.scanner, '')) LIKE '%zap%'
+        )
+      )
+    ORDER BY d.created_at DESC
+    LIMIT 30
+    `,
+    [Number(productId), scannerType]
+  );
+
+  return rows;
+}
+
 async function rankFindingsWithVertex(product, findings) {
   const cveIds = findings.map(f => extractCveId(f.title || "")).filter(Boolean);
   const epssMap = await fetchEpssForCves(cveIds);
@@ -1501,17 +1551,29 @@ async function rankBatch(product, findings, scannerType) {
   const batches = chunkArray(findings, 15);
   let allRanking = [];
 
+  const developerFeedback = await getDeveloperRankingFeedbackForVertex(
+    product.id,
+    scannerType
+  );
+
   for (const batch of batches) {
-    const prompt = buildRankPrompt(product, batch, scannerType);
+    const prompt = buildRankPrompt(
+      product,
+      batch,
+      scannerType,
+      developerFeedback
+    );
+
     const { raw } = await callGemini(prompt);
     const parsed = safeParseJSON(raw);
+
     const batchRanking = Array.isArray(parsed.ordered_items)
       ? parsed.ordered_items
       : [];
+
     allRanking.push(...batchRanking);
   }
 
-  // Rank local qui repart de 1 pour chaque scanner_type
   return allRanking.map((item, index) => ({
     ...item,
     rank: index + 1,
@@ -1519,7 +1581,41 @@ async function rankBatch(product, findings, scannerType) {
   }));
 }
 
-function buildRankPrompt(product, batch, scannerType) {
+function buildRankPrompt(product, batch, scannerType, developerFeedback = []) {
+  const developerFeedbackBlock = developerFeedback.length
+    ? `
+Previous developer ranking corrections:
+
+${JSON.stringify(
+  developerFeedback.map((f) => ({
+    previous_finding_title: f.title,
+    previous_severity: f.severity,
+    previous_scanner: f.scanner,
+    previous_ai_rank: f.ai_rank,
+    previous_ai_priority_label: f.ai_priority_label,
+    corrected_developer_rank: f.developer_rank,
+    developer_reason: f.developer_reason,
+    evidence: f.evidence || "",
+    attack: f.attack || "",
+    url: f.url || "",
+    cwe: f.cwe || "",
+  })),
+  null,
+  2
+)}
+
+How to use this feedback:
+- Learn the developer's ranking preference from corrected_developer_rank and developer_reason.
+- If a current finding is similar to a previous corrected finding, rank it according to the developer's logic.
+- If the previous AI rank was too high or too low compared to the developer rank, adjust similar findings accordingly.
+- Developer feedback is more important than the default rules when there is a conflict.
+- Do not copy old ranks blindly. Use the developer's reasoning to rank the current findings.
+`
+    : `
+No previous developer ranking corrections are available.
+Use only the default ranking rules.
+`;
+
   const baseRules = `
 Return ONLY valid JSON:
 {
@@ -1532,14 +1628,19 @@ Return ONLY valid JSON:
     }
   ]
 }
+
 Rules:
 - Include every finding_id exactly once.
 - rank starts at 1 inside this batch.
 - reason must be 1 short sentence.
 - No markdown, no text outside JSON.
+- Consider previous developer corrections when available.
 
 Product: ${product.name}
-Findings:
+
+${developerFeedbackBlock}
+
+Current findings to prioritize:
 ${JSON.stringify(batch, null, 2)}
 `;
 
@@ -1547,14 +1648,18 @@ ${JSON.stringify(batch, null, 2)}
     return `
 You are a senior DevSecOps engineer ranking container and dependency CVEs.
 
-Prioritize in this order:
-1. KEV (CISA Known Exploited Vulnerabilities) → always Critical
-2. EPSS score > 0.4 → very high urgency
-3. CVSS base score (higher = more urgent)
-4. Fix available (fixed_version not empty) → more urgent to patch
-5. Package exposure (network-reachable vs local-only)
+Default ranking rules:
+1. CISA KEV vulnerabilities are highest priority.
+2. High EPSS score means higher urgency.
+3. Higher CVSS means higher urgency.
+4. Fix available means higher remediation priority.
+5. Runtime/package exposure matters.
+
+Important:
+Previous developer corrections override the default rules when relevant.
 
 Do NOT rank web/HTTP vulnerabilities here.
+
 ${baseRules}`;
   }
 
@@ -1562,21 +1667,30 @@ ${baseRules}`;
     return `
 You are a senior Application Security Engineer ranking OWASP ZAP web vulnerabilities.
 
-Prioritize in this order:
-1. Authentication bypass, broken access control (OWASP A01, A07)
-2. Injection: SQLi, XSS, SSTI, XXE, command injection
-3. Sensitive data exposure on authenticated or admin endpoints
-4. Evidence field confirmed + attack payload present → higher urgency
-5. Sensitive URL patterns (/admin, /login, /api/payment, /auth)
-6. Missing security headers → Low unless combined with other issues
+Default ranking rules:
+1. Authentication bypass and broken access control are highest priority.
+2. Injection vulnerabilities are very urgent.
+3. Sensitive data exposure on admin/auth/payment endpoints is high priority.
+4. Evidence and attack payload increase urgency.
+5. Sensitive URLs such as /admin, /login, /api/payment, /auth increase urgency.
+6. Missing security headers are usually Low unless combined with stronger risk evidence.
+
+Important:
+Previous developer corrections override the default rules when relevant.
 
 Do NOT rank CVEs or dependency issues here.
+
 ${baseRules}`;
   }
 
-  return `You are a security engineer. Rank these findings by urgency.\n${baseRules}`;
-}
+  return `
+You are a security engineer. Rank these findings by urgency.
 
+Important:
+Previous developer corrections override default rules when relevant.
+
+${baseRules}`;
+}
 
 app.get("/api/repositories/:id/developer-rank-feedback", async (req, res) => {
   try {
@@ -1864,10 +1978,7 @@ app.post("/api/repositories/:id/developer-rank-feedback", authMiddleware, async 
       return res.status(400).json({ error: "items must be an array" });
     }
 
-    await pool.query(
-      `DELETE FROM developer_ranking_feedback WHERE product_id = $1`,
-      [productId]
-    );
+   
 
     for (const item of items) {
   await pool.query(
