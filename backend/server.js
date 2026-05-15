@@ -1664,6 +1664,9 @@ Previous developer corrections override default rules when relevant.
 ${baseRules}`;
 }
 
+
+
+
 app.get("/api/repositories/:id/developer-rank-feedback", async (req, res) => {
   try {
     const productId = Number(req.params.id);
@@ -1841,7 +1844,90 @@ app.get("/api/repositories/:id/trivy-ml-rank-findings", async (req, res) => {
   }
 });
 
+// Endpoint backend
+app.get("/api/repositories/:id/ranking-metrics", async (req, res) => {
+  const productId = req.params.id;
 
+  const { rows } = await pool.query(`
+    SELECT
+      d.finding_id,
+      d.ai_rank,
+      d.developer_rank,
+      d.ai_priority_label,
+      f.severity
+    FROM developer_ranking_feedback d
+    JOIN findings f ON f.id = d.finding_id
+    WHERE d.product_id = $1
+      AND d.developer_rank IS NOT NULL
+      AND d.ai_rank IS NOT NULL
+    ORDER BY d.created_at DESC
+  `, [productId]);
+
+  if (rows.length < 3) {
+    return res.json({ error: "Not enough feedback data", minimum: 3, current: rows.length });
+  }
+
+  // ── NDCG ──────────────────────────────────────
+  // Relevance = inverse du developer_rank (rang 1 = relevance max)
+  const maxRank = Math.max(...rows.map(r => r.developer_rank));
+
+  function dcg(rankings) {
+    return rankings.reduce((sum, item, i) => {
+      const relevance = maxRank - item.developer_rank + 1;
+      return sum + relevance / Math.log2(i + 2);
+    }, 0);
+  }
+
+  const sortedByAI = [...rows].sort((a, b) => a.ai_rank - b.ai_rank);
+  const sortedByDev = [...rows].sort((a, b) => a.developer_rank - b.developer_rank);
+
+  const actualDCG = dcg(sortedByAI);
+  const idealDCG  = dcg(sortedByDev);
+  const ndcg = idealDCG > 0 ? actualDCG / idealDCG : 0;
+
+  // ── Kendall Tau ────────────────────────────────
+  // Mesure si l'ordre AI correspond à l'ordre dev
+  let concordant = 0;
+  let discordant = 0;
+  for (let i = 0; i < rows.length; i++) {
+    for (let j = i + 1; j < rows.length; j++) {
+      const aiOrder  = rows[i].ai_rank - rows[j].ai_rank;
+      const devOrder = rows[i].developer_rank - rows[j].developer_rank;
+      if (aiOrder * devOrder > 0) concordant++;
+      else if (aiOrder * devOrder < 0) discordant++;
+    }
+  }
+  const n = rows.length;
+  const kendallTau = (concordant - discordant) / (n * (n - 1) / 2);
+
+  // ── Rank Error moyen ───────────────────────────
+  // Écart moyen entre ai_rank et developer_rank
+  const avgRankError = rows.reduce((sum, r) => {
+    return sum + Math.abs(r.ai_rank - r.developer_rank);
+  }, 0) / rows.length;
+
+  // ── Top-3 Precision ────────────────────────────
+  // Est-ce que le top 3 AI correspond au top 3 dev ?
+  const top3AI  = new Set(sortedByAI.slice(0, 3).map(r => r.finding_id));
+  const top3Dev = new Set(sortedByDev.slice(0, 3).map(r => r.finding_id));
+  const top3Intersection = [...top3AI].filter(id => top3Dev.has(id)).length;
+  const top3Precision = top3Intersection / 3;
+
+  res.json({
+    total_feedbacks: rows.length,
+    metrics: {
+      ndcg: Number(ndcg.toFixed(3)),
+      kendall_tau: Number(kendallTau.toFixed(3)),
+      avg_rank_error: Number(avgRankError.toFixed(2)),
+      top3_precision: Number(top3Precision.toFixed(2)),
+    },
+    interpretation: {
+      ndcg: ndcg >= 0.8 ? "Excellent" : ndcg >= 0.6 ? "Good" : "Needs improvement",
+      kendall_tau: kendallTau >= 0.7 ? "Strong agreement" : kendallTau >= 0.4 ? "Moderate agreement" : "Weak agreement",
+      top3_precision: `${top3Intersection}/3 critical findings correctly ranked`,
+    }
+  });
+});
 
 
 
