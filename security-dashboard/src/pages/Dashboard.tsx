@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, logout } from "../services/api";
-import PipelinePage from "./PipelinePage";
+import PipelinePage from "./PipelinePage"; 
 
 interface Recommendation {
   id: string; 
