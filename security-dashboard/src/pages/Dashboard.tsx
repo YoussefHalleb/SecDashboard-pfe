@@ -620,23 +620,7 @@ const deleteUser = async (userId: number) => {
                     <>🤖 AI Recommendations</>
                   )}
                 </button>
-                <button
-  onClick={runTrivyMLRanking}
-  disabled={loadingTrivyML}
-  className="flex items-center gap-1.5 bg-teal-500/10 border border-teal-500/30 text-teal-400 hover:bg-teal-500/20 disabled:opacity-50 text-xs font-semibold px-3 py-1.5 rounded-lg transition"
->
-  {loadingTrivyML ? (
-    <>
-      <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
-        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-      </svg>
-      Ranking...
-    </>
-  ) : (
-    <>🐳 ML Trivy Rank</>
-  )}
-</button>
+
                 <button
                   onClick={() => setSelectedRepo(null)}
                   className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition text-lg"
@@ -786,6 +770,7 @@ const deleteUser = async (userId: number) => {
                         Trivy and ZAP ranked separately by the AI.
                       </p>
                     </div>
+                    
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => selectedRepo && loadAiRanking(selectedRepo.id)}
@@ -807,7 +792,66 @@ const deleteUser = async (userId: number) => {
                       </button>
                     </div>
                   </div>
+{/* ── Explication comment l'IA utilise le feedback dev ── */}
+<div className="bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 mb-4">
+  <div className="flex items-center gap-2 mb-2">
+    <span className="text-xs font-bold text-slate-300">🧠 How AI learns from your feedback</span>
+    {aiRankedFindings.some(f => f.developer_rank) ? (
+      <span className="text-xs bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-full">
+        Active — dev corrections applied
+      </span>
+    ) : (
+      <span className="text-xs bg-slate-700 border border-slate-600 text-slate-500 px-2 py-0.5 rounded-full">
+        No corrections yet
+      </span>
+    )}
+  </div>
 
+  <div className="space-y-1.5 text-xs text-slate-400">
+    <div className="flex items-start gap-2">
+      <span className="text-emerald-400 mt-0.5">①</span>
+      <span>AI ranks findings using CVSS, EPSS, KEV, evidence, and sensitive URLs by default.</span>
+    </div>
+    <div className="flex items-start gap-2">
+      <span className="text-blue-400 mt-0.5">②</span>
+      <span>When you reorder findings and save, the AI receives your corrections on the next ranking run.</span>
+    </div>
+    <div className="flex items-start gap-2">
+      <span className="text-violet-400 mt-0.5">③</span>
+      <span>
+        The AI extracts <strong className="text-slate-300">patterns</strong> from your corrections —
+        not just individual cases. If you promoted auth findings, similar findings will rank higher next time.
+      </span>
+    </div>
+    <div className="flex items-start gap-2">
+      <span className="text-orange-400 mt-0.5">④</span>
+      <span>Your corrections <strong className="text-slate-300">always override</strong> the default rules when there is a conflict.</span>
+    </div>
+  </div>
+
+  {/* Stat corrections actives */}
+  {aiRankedFindings.some(f => f.developer_rank) && (
+    <div className="mt-3 pt-3 border-t border-slate-700/50 flex items-center gap-4 flex-wrap">
+      <div className="text-xs text-slate-500">
+        Corrections applied:{" "}
+        <span className="text-white font-bold">
+          {aiRankedFindings.filter(f => f.developer_rank && f.developer_rank !== f.ai_rank).length}
+        </span>
+        {" "}findings reranked by dev
+      </div>
+      {aiRankedFindings.filter(f => f.developer_rank && f.developer_rank < f.ai_rank).length > 0 && (
+        <div className="text-xs text-emerald-400">
+          ↑ {aiRankedFindings.filter(f => f.developer_rank && f.developer_rank < f.ai_rank).length} promoted
+        </div>
+      )}
+      {aiRankedFindings.filter(f => f.developer_rank && f.developer_rank > f.ai_rank).length > 0 && (
+        <div className="text-xs text-red-400">
+          ↓ {aiRankedFindings.filter(f => f.developer_rank && f.developer_rank > f.ai_rank).length} demoted
+        </div>
+      )}
+    </div>
+  )}
+</div>
                   {/* Onglets ZAP / Trivy */}
                   <div className="flex gap-2 mb-4">
                     {(["zap", "trivy"] as const).map((tab) => {
