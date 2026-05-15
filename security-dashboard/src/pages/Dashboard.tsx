@@ -41,10 +41,6 @@ interface Repository {
 type RecommendationStatus = "proposed" | "approved" | "rejected";
 
 export default function Dashboard() {
-  const [trivyMlRankedFindings, setTrivyMlRankedFindings] = useState<any[]>([]);
-const [loadingTrivyML, setLoadingTrivyML] = useState(false);
-const [showTrivyML, setShowTrivyML] = useState(false);
-const [trivyMLMessage, setTrivyMLMessage] = useState("");
   const [selectedRepo, setSelectedRepo] = useState<Repository | null>(null);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [prioritizedFindings, setPrioritizedFindings] = useState<any[]>([]);
@@ -236,40 +232,10 @@ const normalizeScannerType = (f: any) => {
   const loadAiRanking = async (repoId: number) => {
     const res = await api.get(`/api/repositories/${repoId}/ai-rank-findings`);
     setAiRankedFindings(res.data.items || []);
-  };
-const loadTrivyMLRanking = async (repoId: number) => {
-  const res = await api.get(`/api/repositories/${repoId}/trivy-ml-rank-findings`);
-  setTrivyMlRankedFindings(res.data.items || []);
-  setShowTrivyML(true);
-};
-
-const runTrivyMLRanking = async () => {
-  if (!selectedRepo || loadingTrivyML) return;
-
-  setLoadingTrivyML(true);
-  setTrivyMLMessage("");
-
-  try {
-    const runRes = await api.post(
-      `/api/repositories/${selectedRepo.id}/trivy-ml-rank-run`
-    );
-
-    const count = runRes.data.count || 0;
-
-    const getRes = await api.get(
-      `/api/repositories/${selectedRepo.id}/trivy-ml-rank-findings`
-    );
-
-    setTrivyMlRankedFindings(getRes.data.items || []);
-    setShowTrivyML(true);
-    setTrivyMLMessage(`Trivy ML ranking completed: ${count} findings ranked.`);
-  } catch (e) {
-    console.error(e);
-    setTrivyMLMessage("Failed to run Trivy ML ranking.");
-  } finally {
-    setLoadingTrivyML(false);
   }
-};
+
+
+
   const loadDeveloperRanking = async (repoId: number) => {
     const res = await api.get(`/api/repositories/${repoId}/developer-rank-feedback`);
     const items = res.data.items || [];
@@ -547,9 +513,6 @@ const deleteUser = async (userId: number) => {
   setRecommendations([]);
   setPrioritizedFindings([]);
   setAiRankedFindings([]);
-  setTrivyMlRankedFindings([]);
-  setShowTrivyML(false);
-  setTrivyMLMessage("");
   setRankingReasons({});
   setAiMessage("");
   setRankingTab("zap");
@@ -643,121 +606,8 @@ const deleteUser = async (userId: number) => {
                   {feedbackMessage}
                 </div>
               )}
-{!!trivyMLMessage && (
-  <div className={`text-xs px-4 py-2.5 rounded-xl border ${
-    trivyMLMessage.includes("Failed")
-      ? "bg-red-500/10 border-red-500/20 text-red-400"
-      : "bg-teal-500/10 border-teal-500/20 text-teal-400"
-  }`}>
-    {trivyMLMessage}
-  </div>
-)}
-              {showTrivyML && (
-  <div className="bg-slate-800/50 border border-teal-500/20 rounded-xl p-4">
-    <div className="flex items-center justify-between mb-4">
-      <div>
-        <h3 className="text-sm font-bold text-teal-400">
-          🐳 Trivy ML LambdaRank
-        </h3>
-        <p className="text-xs text-slate-500 mt-1">
-          Vulnerabilities ranked by the trained LightGBM model.
-        </p>
-      </div>
 
-      <div className="flex items-center gap-2">
-        <span className="text-xs bg-slate-900 border border-slate-700 text-slate-400 px-2 py-1 rounded-lg">
-          {trivyMlRankedFindings.length} findings
-        </span>
-
-        <button
-          onClick={() => selectedRepo && loadTrivyMLRanking(selectedRepo.id)}
-          className="text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1.5 rounded-lg"
-        >
-          Refresh
-        </button>
-      </div>
-    </div>
-
-    {trivyMlRankedFindings.length === 0 ? (
-      <div className="text-xs text-slate-500 text-center py-6">
-        No Trivy ML ranking found yet. Click “ML Trivy Rank” to generate it.
-      </div>
-    ) : (
-      <div className="space-y-2">
-        {trivyMlRankedFindings.slice(0, 30).map((f) => (
-          <div
-            key={f.id}
-            className="bg-slate-900 border border-slate-700 rounded-lg px-4 py-3"
-          >
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3 min-w-0 flex-1">
-                <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-mono text-sm font-bold border ${
-                  f.ml_rank <= 3
-                    ? "bg-red-500/10 border-red-500/30 text-red-400"
-                    : f.ml_rank <= 10
-                    ? "bg-orange-500/10 border-orange-500/30 text-orange-400"
-                    : f.ml_rank <= 20
-                    ? "bg-yellow-500/10 border-yellow-500/30 text-yellow-400"
-                    : "bg-slate-800 border-slate-600 text-slate-400"
-                }`}>
-                  {f.ml_rank}
-                </div>
-
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold text-white truncate">
-                    {f.title}
-                  </div>
-                  <div className="text-xs text-slate-500 mt-0.5">
-                    #{f.id} · {f.severity} · {f.scanner}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3 shrink-0">
-                <div className="text-right">
-                  <div className="text-sm font-black text-teal-400 font-mono">
-                    {Number(f.ml_score || 0).toFixed(2)}
-                  </div>
-                  <div className="text-xs text-slate-600">ML score</div>
-                </div>
-
-                <span className={`text-xs font-bold px-2 py-0.5 rounded border ${
-                  f.ml_priority_label === "Critical"
-                    ? "bg-red-500/10 border-red-500/30 text-red-400"
-                    : f.ml_priority_label === "High"
-                    ? "bg-orange-500/10 border-orange-500/30 text-orange-400"
-                    : f.ml_priority_label === "Medium"
-                    ? "bg-yellow-500/10 border-yellow-500/30 text-yellow-400"
-                    : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
-                }`}>
-                  {f.ml_priority_label}
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              <span className="text-xs bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full">
-                {f.ml_reason || "Trivy ML LambdaRank prediction"}
-              </span>
-
-              {f.ml_updated_at && (
-                <span className="text-xs bg-slate-800 text-slate-500 px-2 py-0.5 rounded-full">
-                  Updated: {new Date(f.ml_updated_at).toLocaleString()}
-                </span>
-              )}
-            </div>
-          </div>
-        ))}
-
-        {trivyMlRankedFindings.length > 30 && (
-          <div className="text-xs text-slate-500 text-center pt-2">
-            Showing top 30 of {trivyMlRankedFindings.length} ML-ranked Trivy findings.
-          </div>
-        )}
-      </div>
-    )}
-  </div>
-)}
+              
               {/* ── AI Ranked Findings avec onglets Trivy / ZAP ── */}
               {aiRankedFindings.length > 0 && (
                 <div className="bg-slate-800/50 border border-emerald-500/20 rounded-xl p-4">
