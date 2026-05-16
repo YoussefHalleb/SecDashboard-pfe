@@ -56,7 +56,6 @@ export default function Dashboard() {
   const [jiraAssigneeId, setJiraAssigneeId] = useState<string>("");
   const [showUserManager, setShowUserManager] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
-  const [metrics, setMetrics] = useState<any>(null);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const handleLogout = async () => {
     try {
