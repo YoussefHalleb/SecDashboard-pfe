@@ -673,71 +673,7 @@ const deleteUser = async (userId: number) => {
                       </button>
                     </div>
                   </div>
-                  {metrics && (
-  <div className="bg-slate-800/50 border border-blue-500/20 rounded-xl p-4">
-    <h3 className="text-sm font-bold text-blue-400 mb-4">
-      📊 AI Ranking Quality Metrics
-    </h3>
-    <p className="text-xs text-slate-500 mb-4">
-      Based on {metrics.total_feedbacks} developer corrections
-    </p>
-
-    <div className="grid grid-cols-4 gap-3 mb-4">
-      {[
-        {
-          label: "NDCG",
-          value: metrics.metrics.ndcg,
-          max: 1,
-          color: metrics.metrics.ndcg >= 0.8 ? "text-emerald-400"
-               : metrics.metrics.ndcg >= 0.6 ? "text-yellow-400"
-               : "text-red-400",
-          desc: "Critical findings ranked correctly"
-        },
-        {
-          label: "Kendall τ",
-          value: metrics.metrics.kendall_tau,
-          max: 1,
-          color: metrics.metrics.kendall_tau >= 0.7 ? "text-emerald-400"
-               : metrics.metrics.kendall_tau >= 0.4 ? "text-yellow-400"
-               : "text-red-400",
-          desc: "Order agreement with developer"
-        },
-        {
-          label: "Avg Error",
-          value: metrics.metrics.avg_rank_error,
-          max: null,
-          color: metrics.metrics.avg_rank_error <= 2 ? "text-emerald-400"
-               : metrics.metrics.avg_rank_error <= 4 ? "text-yellow-400"
-               : "text-red-400",
-          desc: "Average rank position error"
-        },
-        {
-          label: "Top-3",
-          value: `${Math.round(metrics.metrics.top3_precision * 100)}%`,
-          max: null,
-          color: metrics.metrics.top3_precision >= 0.67 ? "text-emerald-400"
-               : "text-yellow-400",
-          desc: "Critical findings in top 3"
-        },
-      ].map(({ label, value, color, desc }) => (
-        <div key={label} className="bg-slate-900 rounded-xl p-3 text-center">
-          <div className={`text-2xl font-black font-mono ${color}`}>{value}</div>
-          <div className="text-xs font-bold text-slate-300 mt-1">{label}</div>
-          <div className="text-xs text-slate-500 mt-0.5">{desc}</div>
-        </div>
-      ))}
-    </div>
-
-    <div className="space-y-2">
-      {Object.entries(metrics.interpretation).map(([key, value]) => (
-        <div key={key} className="flex items-center gap-2 text-xs">
-          <span className="text-slate-500 capitalize">{key.replace("_", " ")}:</span>
-          <span className="text-slate-300">{value as string}</span>
-        </div>
-      ))}
-    </div>
-  </div>
-)}
+                
 {/* ── Explication comment l'IA utilise le feedback dev ── */}
 <div className="bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 mb-4">
   <div className="flex items-center gap-2 mb-2">
