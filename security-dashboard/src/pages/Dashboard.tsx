@@ -57,7 +57,6 @@ export default function Dashboard() {
   const [showUserManager, setShowUserManager] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
   const [metrics, setMetrics] = useState<any>(null);
-  const [loadingMetrics, setLoadingMetrics] = useState(false);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const handleLogout = async () => {
     try {
@@ -172,18 +171,7 @@ const normalizeScannerType = (f: any) => {
       alert("Reject failed");
     }
   };
-const loadMetrics = async () => {
-  if (!selectedRepo) return;
-  setLoadingMetrics(true);
-  try {
-    const res = await api.get(`/api/repositories/${selectedRepo.id}/ranking-metrics`);
-    setMetrics(res.data);
-  } catch (e) {
-    console.error(e);
-  } finally {
-    setLoadingMetrics(false);
-  }
-};
+
   
 
   const saveDeveloperPriority = async (finding: any, developerPriority: string) => {
