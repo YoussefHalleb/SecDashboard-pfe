@@ -50,15 +50,11 @@ export default function Dashboard() {
   const [rankingReasons, setRankingReasons] = useState<Record<number, string>>({});
   const [aiMessage, setAiMessage] = useState<string>("");
   const [aiSource, setAiSource] = useState<"" | "generated" | "database">("");
-  const [perfResults, setPerfResults] = useState<any[]>([]);
-  const [loadingPerf, setLoadingPerf] = useState(false);
   const [loadingRankRun, setLoadingRankRun] = useState(false);
   const [savingFeedbackId, setSavingFeedbackId] = useState<number | null>(null);
   const [feedbackMessage, setFeedbackMessage] = useState<string>("");
   const [jiraAssigneeId, setJiraAssigneeId] = useState<string>("");
   const [showUserManager, setShowUserManager] = useState(false);
-  const [metrics, setMetrics] = useState<any>(null);
-  const [loadingMetrics, setLoadingMetrics] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const handleLogout = async () => {
@@ -158,17 +154,7 @@ const normalizeScannerType = (f: any) => {
 
   return "unknown";
 };
-  const loadPerformance = async (repoId: number) => {
-    setLoadingPerf(true);
-    try {
-      const res = await api.get(`/api/performance/${repoId}`);
-      setPerfResults(res.data);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoadingPerf(false);
-    }
-  };
+ 
 
   const reject = async (recId: string) => {
     try {
@@ -532,7 +518,7 @@ const deleteUser = async (userId: number) => {
   setRankingReasons({});
   setAiMessage("");
   setRankingTab("zap");
-  loadPerformance(repo.id);
+  
   
 }}
                     className="flex-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 text-slate-300 hover:text-white text-sm font-semibold py-2.5 rounded-xl transition"
@@ -582,13 +568,7 @@ const deleteUser = async (userId: number) => {
                 >
                   📄 ZAP Report
                 </button>
-                <button
-  onClick={loadMetrics}
-  disabled={loadingMetrics}
-  className="flex items-center gap-1.5 bg-blue-500/10 border border-blue-500/30 text-blue-400 hover:bg-blue-500/20 text-xs font-semibold px-3 py-1.5 rounded-lg transition"
->
-  📊 Metrics
-</button>
+           
                 <button
                   onClick={generateAI}
                   disabled={loadingAI}
@@ -1250,85 +1230,7 @@ const deleteUser = async (userId: number) => {
                 </div>
               )}
 
-              {/* Performance */}
-              {loadingPerf && (
-                <div className="flex items-center gap-2 text-xs text-blue-400">
-                  <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                  </svg>
-                  Loading performance data...
-                </div>
-              )}
-
-              {perfResults.length > 0 && (
-                <div className="bg-slate-800/50 border border-blue-500/20 rounded-xl p-4">
-                  <h3 className="font-bold text-blue-400 text-sm mb-3">⚡ Performance Results</h3>
-                  {perfResults.slice(0, 1).map((perf) => {
-                    const issues = [];
-                    if (perf.avg_response_ms > 1000) issues.push("Avg response trop lent");
-                    if (perf.p95_response_ms > 2000) issues.push("P95 critique");
-                    if (parseFloat(perf.error_rate) > 5) issues.push("Taux d'erreur élevé");
-                    if (parseFloat(perf.throughput) < 5) issues.push("Débit trop faible");
-
-                    const stable = issues.length === 0;
-                    const warning = !stable && issues.length <= 1;
-                    const stabilityColor = stable
-                      ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
-                      : warning
-                      ? "text-yellow-400 border-yellow-500/30 bg-yellow-500/10"
-                      : "text-red-400 border-red-500/30 bg-red-500/10";
-                    const stabilityLabel = stable ? "Stable" : warning ? "Instable" : "Critique";
-
-                    return (
-                      <div key={perf.id}>
-                        <div className={`flex items-center justify-between border rounded-xl px-4 py-2.5 mb-4 ${stabilityColor}`}>
-                          <div>
-                            <div className="font-bold text-sm">
-                              {stable ? "✅" : warning ? "⚠️" : "❌"} Application {stabilityLabel}
-                            </div>
-                            {issues.length > 0 && (
-                              <div className="text-xs mt-1 opacity-80">{issues.join(" · ")}</div>
-                            )}
-                          </div>
-                          <div className="text-xs opacity-70">{perf.vus} VUs · {perf.duration_secs}s</div>
-                        </div>
-
-                        <div className="grid grid-cols-4 gap-3 mb-3">
-                          {[
-                            { label: "Avg Response", value: `${Math.round(perf.avg_response_ms)}ms`, color: perf.avg_response_ms < 200 ? "text-emerald-400" : perf.avg_response_ms < 500 ? "text-yellow-400" : "text-red-400" },
-                            { label: "Throughput", value: `${parseFloat(perf.throughput || 0).toFixed(1)} req/s`, color: parseFloat(perf.throughput) > 50 ? "text-emerald-400" : parseFloat(perf.throughput) > 10 ? "text-yellow-400" : "text-red-400" },
-                            { label: "Error Rate", value: `${parseFloat(perf.error_rate || 0).toFixed(1)}%`, color: perf.error_rate < 0.1 ? "text-emerald-400" : perf.error_rate < 1 ? "text-yellow-400" : "text-red-400" },
-                            { label: "Total Requests", value: perf.total_requests, color: "text-slate-300" },
-                          ].map(({ label, value, color }) => (
-                            <div key={label} className="bg-slate-900 rounded-lg p-2 text-center">
-                              <div className={`font-bold text-lg font-mono ${color}`}>{value}</div>
-                              <div className="text-xs text-slate-500">{label}</div>
-                            </div>
-                          ))}
-                        </div>
-
-                        <div className="grid grid-cols-3 gap-2">
-                          {[
-                            { label: "P90", value: `${Math.round(perf.p90_response_ms)}ms`, color: perf.p90_response_ms < 500 ? "text-emerald-400" : perf.p90_response_ms < 1000 ? "text-yellow-400" : "text-red-400" },
-                            { label: "P95", value: `${Math.round(perf.p95_response_ms)}ms`, color: perf.p95_response_ms < 1000 ? "text-emerald-400" : perf.p95_response_ms < 2000 ? "text-yellow-400" : "text-red-400" },
-                            { label: "Max", value: `${Math.round(perf.max_response_ms)}ms`, color: "text-slate-300" },
-                          ].map(({ label, value, color }) => (
-                            <div key={label} className="bg-slate-800 rounded-lg px-3 py-1.5 flex justify-between">
-                              <span className="text-xs text-slate-500">{label}</span>
-                              <span className={`text-xs font-mono ${color}`}>{value}</span>
-                            </div>
-                          ))}
-                        </div>
-
-                        <div className="text-xs text-slate-600 mt-2">
-                          Last run: {new Date(perf.run_at).toLocaleString()}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+             
 
               {/* Vulnerability Sections */}
               {[
