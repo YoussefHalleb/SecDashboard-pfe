@@ -42,11 +42,11 @@ export default function Login({ onSwitchToRegister }: LoginProps) {
           {/* Logo */}
           <div className="flex items-center justify-center gap-3 mb-8">
             <div className="w-10 h-10 rounded-xl bg-emerald-500 flex items-center justify-center text-slate-900 font-black text-lg">
-              D
+              C
             </div>
             <div>
               <div className="font-bold text-white text-lg leading-none">
-                DevSecOps
+                CodeCure
               </div>
               <div className="text-slate-500 text-xs">Security Platform</div>
             </div>
@@ -165,7 +165,7 @@ export default function Login({ onSwitchToRegister }: LoginProps) {
 
         {/* Footer */}
         <p className="text-center text-slate-600 text-xs mt-4">
-          DevSecOps Platform © 2025
+          CodeCure Platform © 2025
         </p>
       </div>
     </div>
