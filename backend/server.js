@@ -2860,21 +2860,7 @@ async function loadRuntimeSecrets() {
   if (!process.env.JIRA_PROJECT_KEY) {
     process.env.JIRA_PROJECT_KEY = await getSecret("jira-project-key");
   }
-  if (!process.env.GOOGLE_CLIENT_ID) {
-  process.env.GOOGLE_CLIENT_ID = await getSecret("google-client-id");
-}
 
-if (!process.env.GOOGLE_CLIENT_SECRET) {
-  process.env.GOOGLE_CLIENT_SECRET = await getSecret("google-client-secret");
-}
-
-if (!process.env.GOOGLE_REDIRECT_URI) {
-  process.env.GOOGLE_REDIRECT_URI = await getSecret("google-redirect-uri");
-}
-
-if (!process.env.CLIENT_ORIGIN) {
-  process.env.CLIENT_ORIGIN = await getSecret("client-origin");
-}
 
   
   console.log("✅ Runtime secrets loaded");
