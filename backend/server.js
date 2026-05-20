@@ -1039,7 +1039,7 @@ const findingIds = selected.map((v) => v.id);
     // APRÈS - par ça :
     const allRaws = [];
     for (const vuln of summary) {
-      const prompt = `
+  const prompt = `
 You are a senior Application Security Engineer analyzing vulnerabilities from a security scan.
 
 Return ONLY valid JSON in this exact format:
@@ -1090,10 +1090,16 @@ Product: ${product}
 Findings JSON:
 ${JSON.stringify([vuln], null, 2)}
 `;
-      console.log(`\n🔎 Analyzing vuln #${vuln.finding_id}: ${vuln.title}`);
-      const { raw } = await callGeminiWithGrounding(prompt);
-      allRaws.push(raw);
-    }
+  console.log(`\n🔎 Analyzing vuln #${vuln.finding_id}: ${vuln.title}`);
+  try {
+    const { raw } = await callGeminiWithGrounding(prompt);
+    allRaws.push(raw);
+    console.log(`✅ Done vuln #${vuln.finding_id}`);
+  } catch (err) {
+    console.error(`❌ Error vuln #${vuln.finding_id}:`, err.message);
+    throw err;
+  }
+}
 
     const parsed = { items: [] };
     for (const raw of allRaws) {
