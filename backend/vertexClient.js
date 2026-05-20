@@ -80,7 +80,7 @@ async function generateWithVertex(text, systemText) {
     },
     generationConfig: {
       temperature: 0.2,
-      maxOutputTokens: 8192,
+      maxOutputTokens: 16384,
     },
   };
 
@@ -91,9 +91,16 @@ async function generateWithVertex(text, systemText) {
     },
   });
 
-  const raw = response.data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-
-  return { raw };
+ const candidate = response.data.candidates?.[0];
+const raw = candidate?.content?.parts?.[0]?.text || "";
+const finishReason = candidate?.finishReason || "unknown";
+const tokenCount = response.data.usageMetadata?.candidatesTokenCount ?? "?";
+const inputTokens = response.data.usageMetadata?.promptTokenCount ?? "?";
+console.log(`🤖 Gemini (${MODEL_ID}) | finish=${finishReason} | in=${inputTokens}tok out=${tokenCount}tok`);
+if (finishReason === "MAX_TOKENS") {
+  console.warn("⚠️  TRUNCATED — réponse coupée par MAX_TOKENS, augmenter maxOutputTokens");
+}
+return { raw };
 }
 
 async function callGemini(userPrompt) {
@@ -138,7 +145,18 @@ async function callGeminiWithGrounding(userPrompt) {
     .filter((s) => s.length > 10)
     .join("\n\n");
 
-  console.log(`✅ ${searchResults.length} docs OWASP trouvés`);
+console.log(`✅ ${searchResults.length} docs OWASP trouvés`);
+searchResults.slice(0, 5).forEach((r, i) => {
+  const title = r.document?.derivedStructData?.fields?.title?.stringValue || "(no title)";
+  const score = r.relevanceScore ?? r._relevanceScore ?? "n/a";
+  const answers = r.document?.derivedStructData?.fields?.extractive_answers?.listValue?.values || [];
+  const snippet = answers[0]?.structValue?.fields?.content?.stringValue?.slice(0, 120) || "(no snippet)";
+  console.log(`  [${i + 1}] score=${score} | ${title}`);
+  console.log(`       snippet: ${snippet}...`);
+});
+
+const contextLen = context.length;
+console.log(`📦 Context envoyé à Gemini: ${contextLen} chars`);
 
   return generateWithVertex(
     `Using these OWASP reference documents:\n\n${context}\n\n---\n\n${userPrompt}`,
