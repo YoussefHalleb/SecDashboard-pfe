@@ -1614,6 +1614,10 @@ async function getDeveloperRankingFeedbackForVertex(productId, scannerType, curr
     LIMIT 20
   `, [Number(productId), scannerType, titles]);
 
+    console.log(`📋 Developer feedback récupéré: ${rows.length} corrections`);
+  rows.forEach(r => {
+    console.log(`  → "${r.title}" : AI rank=${r.ai_rank} → Dev rank=${r.developer_rank} (${r.developer_rank < r.ai_rank ? "PROMOTED" : "DEMOTED"})`);
+  });
   return rows;
 }
 
