@@ -44,7 +44,7 @@ async function searchOWASPDocs(query) {
     pageSize: 5,
     autoPaginate: false,
   });
-
+ console.log("RAW RESULT[0]:", JSON.stringify(results[0], null, 2));
   return results || [];
 }
 
