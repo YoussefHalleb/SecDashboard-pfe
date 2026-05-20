@@ -1603,14 +1603,14 @@ async function getDeveloperRankingFeedbackForVertex(productId, scannerType, curr
     FROM developer_ranking_feedback d
     JOIN findings f ON f.id = d.finding_id
     WHERE (
-      $2 = 'unknown'
-      OR LOWER(COALESCE(f.scanner, '')) LIKE '%' || LOWER($2) || '%'
+      $1 = 'unknown'
+      OR LOWER(COALESCE(f.scanner, '')) LIKE '%' || LOWER($1) || '%'
     )
     ORDER BY
-      CASE WHEN f.title = ANY($3::text[]) THEN 0 ELSE 1 END,
+      CASE WHEN f.title = ANY($2::text[]) THEN 0 ELSE 1 END,
       d.created_at DESC
     LIMIT 20
-  `, [Number(productId), scannerType, titles]);
+  `, [scannerType, titles]);
 
   console.log(`📋 Developer feedback récupéré: ${rows.length} corrections (tous produits)`);
   rows.forEach(r => {
