@@ -1602,22 +1602,21 @@ async function getDeveloperRankingFeedbackForVertex(productId, scannerType, curr
       d.developer_reason
     FROM developer_ranking_feedback d
     JOIN findings f ON f.id = d.finding_id
-    WHERE d.product_id = $1
-      AND (
-        $2 = 'unknown'
-        OR LOWER(COALESCE(f.scanner, '')) LIKE '%' || LOWER($2) || '%'
-      )
+    WHERE (
+      $2 = 'unknown'
+      OR LOWER(COALESCE(f.scanner, '')) LIKE '%' || LOWER($2) || '%'
+    )
     ORDER BY
-      -- Prioritise les feedbacks proches du batch actuel
       CASE WHEN f.title = ANY($3::text[]) THEN 0 ELSE 1 END,
       d.created_at DESC
     LIMIT 20
   `, [Number(productId), scannerType, titles]);
 
-    console.log(`📋 Developer feedback récupéré: ${rows.length} corrections`);
+  console.log(`📋 Developer feedback récupéré: ${rows.length} corrections (tous produits)`);
   rows.forEach(r => {
     console.log(`  → "${r.title}" : AI rank=${r.ai_rank} → Dev rank=${r.developer_rank} (${r.developer_rank < r.ai_rank ? "PROMOTED" : "DEMOTED"})`);
   });
+
   return rows;
 }
 
