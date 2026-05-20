@@ -148,7 +148,9 @@ async function callGeminiWithGrounding(userPrompt) {
 console.log(`✅ ${searchResults.length} docs OWASP trouvés`);
 searchResults.slice(0, 5).forEach((r, i) => {
   const title = r.document?.derivedStructData?.fields?.title?.stringValue || "(no title)";
-  const score = r.relevanceScore ?? r._relevanceScore ?? "n/a";
+  const score = r.rankSignals?.keywordSimilarityScore?.toFixed(3) 
+           ?? r.rankSignals?.semanticSimilarityScore?.toFixed(3) 
+           ?? "n/a";
   const answers = r.document?.derivedStructData?.fields?.extractive_answers?.listValue?.values || [];
   const snippet = answers[0]?.structValue?.fields?.content?.stringValue?.slice(0, 120) || "(no snippet)";
   console.log(`  [${i + 1}] score=${score} | ${title}`);
