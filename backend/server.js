@@ -1037,7 +1037,9 @@ const findingIds = selected.map((v) => v.id);
     });
 
     // APRÈS - par ça :
-    const prompt = `
+    const allRaws = [];
+    for (const vuln of summary) {
+      const prompt = `
 You are a senior Application Security Engineer analyzing vulnerabilities from a security scan.
 
 Return ONLY valid JSON in this exact format:
@@ -1086,12 +1088,18 @@ Rules:
 Product: ${product}
 
 Findings JSON:
-${JSON.stringify(summary, null, 2)}
+${JSON.stringify([vuln], null, 2)}
 `;
+      console.log(`\n🔎 Analyzing vuln #${vuln.finding_id}: ${vuln.title}`);
+      const { raw } = await callGeminiWithGrounding(prompt);
+      allRaws.push(raw);
+    }
 
-    const { raw } = await callGeminiWithGrounding(prompt);
-
-    const parsed = safeParseJSON(raw);
+    const parsed = { items: [] };
+    for (const raw of allRaws) {
+      const p = safeParseJSON(raw);
+      if (p?.items) parsed.items.push(...p.items);
+    }
 
     if (!parsed) {
       throw new Error("Invalid JSON from AI");
