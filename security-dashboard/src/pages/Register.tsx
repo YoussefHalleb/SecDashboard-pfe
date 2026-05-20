@@ -54,25 +54,37 @@ export default function Register({ onSwitchToLogin }: RegisterProps) {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-950 relative overflow-hidden">
-      {/* Background effects */}
+
+      {/* ── Background layers (same as Login) ── */}
       <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900" />
       <div className="absolute top-1/4 right-1/4 w-96 h-96 bg-violet-500/5 rounded-full blur-3xl" />
       <div className="absolute bottom-1/4 left-1/4 w-96 h-96 bg-emerald-500/5 rounded-full blur-3xl" />
+      {/* Subtle grid overlay */}
+      <div
+        className="absolute inset-0 opacity-[0.03]"
+        style={{
+          backgroundImage:
+            "linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)",
+          backgroundSize: "40px 40px",
+        }}
+      />
 
       {/* Card */}
       <div className="relative w-full max-w-md mx-4">
-        {/* Top accent */}
-        <div className="h-1 bg-gradient-to-r from-violet-500 via-blue-500 to-emerald-500 rounded-t-2xl" />
 
-        <div className="bg-slate-900 border border-slate-800 border-t-0 rounded-b-2xl p-8 shadow-2xl">
+        {/* Top accent line (same as Login) */}
+        <div className="h-[3px] bg-gradient-to-r from-emerald-500 via-blue-500 to-violet-500 rounded-t-2xl" />
+
+        <div className="bg-slate-900/95 border border-slate-800 border-t-0 rounded-b-2xl p-8 shadow-2xl backdrop-blur-sm">
+
           {/* Logo */}
           <div className="flex items-center justify-center gap-3 mb-8">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500 flex items-center justify-center text-slate-900 font-black text-lg">
-              D
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-slate-900 font-black text-lg shadow-lg shadow-emerald-500/20">
+              C
             </div>
             <div>
-              <div className="font-bold text-white text-lg leading-none">
-                DevSecOps
+              <div className="font-bold text-white text-lg leading-none tracking-tight">
+                CodeCure
               </div>
               <div className="text-slate-500 text-xs">Security Platform</div>
             </div>
@@ -80,17 +92,18 @@ export default function Register({ onSwitchToLogin }: RegisterProps) {
 
           <h2 className="text-xl font-bold text-white mb-1">Créer un compte</h2>
           <p className="text-slate-500 text-sm mb-6">
-            Rejoignez la plateforme DevSecOps
+            Rejoignez la plateforme CodeCure
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
+
             {/* Email */}
             <div>
               <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
                 Email
               </label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm select-none">
                   ✉
                 </span>
                 <input
@@ -99,7 +112,7 @@ export default function Register({ onSwitchToLogin }: RegisterProps) {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   placeholder="vous@exemple.com"
-                  className="w-full bg-slate-800/80 border border-slate-700 text-white placeholder-slate-600 text-sm rounded-xl pl-9 pr-4 py-2.5 focus:outline-none focus:border-emerald-500/70 focus:ring-1 focus:ring-emerald-500/30 transition"
+                  className="w-full bg-slate-800 border border-slate-700 text-white placeholder-slate-600 text-sm rounded-xl pl-9 pr-4 py-2.5 focus:outline-none focus:border-emerald-500/70 focus:ring-1 focus:ring-emerald-500/20 transition"
                 />
               </div>
             </div>
@@ -110,7 +123,7 @@ export default function Register({ onSwitchToLogin }: RegisterProps) {
                 Mot de passe
               </label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm select-none">
                   🔒
                 </span>
                 <input
@@ -119,7 +132,7 @@ export default function Register({ onSwitchToLogin }: RegisterProps) {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   placeholder="••••••••"
-                  className="w-full bg-slate-800/80 border border-slate-700 text-white placeholder-slate-600 text-sm rounded-xl pl-9 pr-10 py-2.5 focus:outline-none focus:border-emerald-500/70 focus:ring-1 focus:ring-emerald-500/30 transition"
+                  className="w-full bg-slate-800 border border-slate-700 text-white placeholder-slate-600 text-sm rounded-xl pl-9 pr-10 py-2.5 focus:outline-none focus:border-emerald-500/70 focus:ring-1 focus:ring-emerald-500/20 transition"
                 />
                 <button
                   type="button"
@@ -138,15 +151,11 @@ export default function Register({ onSwitchToLogin }: RegisterProps) {
                       className={`h-full rounded-full transition-all duration-300 ${strength.color} ${strength.width}`}
                     />
                   </div>
-                  <p
-                    className={`text-xs mt-1 ${
-                      strength.label === "Faible"
-                        ? "text-red-400"
-                        : strength.label === "Moyen"
-                          ? "text-yellow-400"
-                          : "text-emerald-400"
-                    }`}
-                  >
+                  <p className={`text-xs mt-1 ${
+                    strength.label === "Faible" ? "text-red-400"
+                    : strength.label === "Moyen" ? "text-yellow-400"
+                    : "text-emerald-400"
+                  }`}>
                     Force : {strength.label}
                   </p>
                 </div>
@@ -159,7 +168,7 @@ export default function Register({ onSwitchToLogin }: RegisterProps) {
                 Confirmer le mot de passe
               </label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm select-none">
                   🔒
                 </span>
                 <input
@@ -168,12 +177,12 @@ export default function Register({ onSwitchToLogin }: RegisterProps) {
                   onChange={(e) => setConfirm(e.target.value)}
                   required
                   placeholder="••••••••"
-                  className={`w-full bg-slate-800/80 border text-white placeholder-slate-600 text-sm rounded-xl pl-9 pr-10 py-2.5 focus:outline-none focus:ring-1 transition ${
+                  className={`w-full bg-slate-800 border text-white placeholder-slate-600 text-sm rounded-xl pl-9 pr-10 py-2.5 focus:outline-none focus:ring-1 transition ${
                     confirm && password !== confirm
-                      ? "border-red-500/50 focus:border-red-500/70 focus:ring-red-500/30"
+                      ? "border-red-500/50 focus:border-red-500/70 focus:ring-red-500/20"
                       : confirm && password === confirm
-                        ? "border-emerald-500/50 focus:border-emerald-500/70 focus:ring-emerald-500/30"
-                        : "border-slate-700 focus:border-emerald-500/70 focus:ring-emerald-500/30"
+                        ? "border-emerald-500/50 focus:border-emerald-500/70 focus:ring-emerald-500/20"
+                        : "border-slate-700 focus:border-emerald-500/70 focus:ring-emerald-500/20"
                   }`}
                 />
                 <button
@@ -203,28 +212,13 @@ export default function Register({ onSwitchToLogin }: RegisterProps) {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-semibold text-sm py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 mt-2"
+              className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-semibold text-sm py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 mt-1 shadow-lg shadow-emerald-500/10 hover:shadow-emerald-500/20"
             >
               {loading ? (
                 <>
-                  <svg
-                    className="w-4 h-4 animate-spin"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8v8z"
-                    />
+                  <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
                   </svg>
                   Création...
                 </>
@@ -234,7 +228,7 @@ export default function Register({ onSwitchToLogin }: RegisterProps) {
             </button>
           </form>
 
-          {/* Switch */}
+          {/* Switch to login */}
           <div className="mt-6 pt-5 border-t border-slate-800 text-center">
             <span className="text-slate-500 text-sm">Déjà un compte ? </span>
             <button
@@ -249,7 +243,7 @@ export default function Register({ onSwitchToLogin }: RegisterProps) {
 
         {/* Footer */}
         <p className="text-center text-slate-600 text-xs mt-4">
-          DevSecOps Platform © 2025
+          CodeCure Platform © 2025
         </p>
       </div>
     </div>
