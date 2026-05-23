@@ -1475,6 +1475,89 @@ function predictTrivyRankBatchWithML(findings) {
     });
   });
 }
+
+app.get("/api/repositories/:id/dataset-rank-findings", async (req, res) => {
+  try {
+    const productId = Number(req.params.id);
+
+    const trivy = await pool.query(
+      `
+      SELECT
+        product_id,
+        finding_id AS id,
+        title,
+        severity,
+        scanner,
+        cve_id,
+        package_name,
+        installed_version,
+        fixed_version,
+        epss_score,
+        epss_percentile,
+        is_kev,
+        ai_rank,
+        ai_priority_label,
+        ai_reason AS ai_ranking_reason,
+        dev_rank,
+        dev_reason,
+        'trivy' AS scanner_type,
+        updated_at
+      FROM trivy_ranking_dataset
+      WHERE product_id = $1
+      ORDER BY ai_rank ASC
+      `,
+      [productId]
+    );
+
+    const owasp = await pool.query(
+      `
+      SELECT
+        product_id,
+        finding_id AS id,
+        title,
+        severity,
+        scanner,
+        url,
+        method,
+        parameter,
+        attack,
+        evidence,
+        cwe,
+        plugin_id,
+        owasp_category,
+        ai_rank,
+        ai_priority_label,
+        ai_reason AS ai_ranking_reason,
+        dev_rank,
+        dev_reason,
+        'zap' AS scanner_type,
+        updated_at
+      FROM owasp_ranking_dataset
+      WHERE product_id = $1
+      ORDER BY ai_rank ASC
+      `,
+      [productId]
+    );
+
+    const items = [...trivy.rows, ...owasp.rows];
+
+    res.json({
+      product_id: productId,
+      count: items.length,
+      source: "scanner-specific-ranking-datasets",
+      trivy_count: trivy.rows.length,
+      owasp_count: owasp.rows.length,
+      items,
+    });
+  } catch (error) {
+    console.error("Dataset ranking fetch error:", error.message);
+    res.status(500).json({
+      error: "Failed to fetch dataset ranking",
+    });
+  }
+});
+
+
 function predictPriorityBatchWithML(findings) {
   return new Promise((resolve) => {
     const python = spawn("python", ["predict_priority_batch.py"], {
