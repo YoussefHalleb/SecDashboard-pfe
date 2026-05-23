@@ -1368,6 +1368,78 @@ app.get("/api/findings/:id/ai-analysis", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch AI analysis" });
   }
 });
+
+async function getTrivyDatasetExamples(productId) {
+  const { rows } = await pool.query(
+    `
+    SELECT
+      product_id,
+      finding_id,
+      title,
+      severity,
+      cve_id,
+      package_name,
+      installed_version,
+      fixed_version,
+      epss_score,
+      epss_percentile,
+      is_kev,
+      ai_rank,
+      ai_priority_label,
+      ai_reason,
+      dev_rank,
+      dev_reason
+    FROM trivy_ranking_dataset
+    WHERE dev_rank IS NOT NULL
+      AND dev_reason IS NOT NULL
+      AND dev_reason <> ''
+      AND product_id <> $1
+    ORDER BY updated_at DESC
+    LIMIT 15
+    `,
+    [productId]
+  );
+
+  return rows;
+}
+
+async function getOwaspDatasetExamples(productId) {
+  const { rows } = await pool.query(
+    `
+    SELECT
+      product_id,
+      finding_id,
+      title,
+      severity,
+      url,
+      method,
+      parameter,
+      attack,
+      evidence,
+      cwe,
+      plugin_id,
+      owasp_category,
+      ai_rank,
+      ai_priority_label,
+      ai_reason,
+      dev_rank,
+      dev_reason
+    FROM owasp_ranking_dataset
+    WHERE dev_rank IS NOT NULL
+      AND dev_reason IS NOT NULL
+      AND dev_reason <> ''
+      AND product_id <> $1
+    ORDER BY updated_at DESC
+    LIMIT 15
+    `,
+    [productId]
+  );
+
+  return rows;
+}
+
+
+
 function predictTrivyRankBatchWithML(findings) {
   return new Promise((resolve) => {
     const python = spawn("python", ["ppredict_priority_batch.py"], {
@@ -1647,22 +1719,47 @@ async function rankFindingsWithVertex(product, findings) {
 
   return allRanking;
 }
+
+
 async function rankBatch(product, findings, scannerType) {
   const batches = chunkArray(findings, 15);
   let allRanking = [];
 
-  // ✅ passe les findings courants pour cibler le feedback pertinent
   const developerFeedback = await getDeveloperRankingFeedbackForVertex(
     product.id,
     scannerType,
-    findings // ← AJOUT
+    findings
+  );
+
+  let datasetExamples = [];
+
+  if (scannerType === "trivy") {
+    datasetExamples = await getTrivyDatasetExamples(product.id);
+  }
+
+  if (scannerType === "zap") {
+    datasetExamples = await getOwaspDatasetExamples(product.id);
+  }
+
+  console.log(
+    `📚 Dataset examples for ${scannerType}: ${datasetExamples.length}`
   );
 
   for (const batch of batches) {
-    const prompt = buildRankPrompt(product, batch, scannerType, developerFeedback);
+    const prompt = buildRankPrompt(
+      product,
+      batch,
+      scannerType,
+      developerFeedback,
+      datasetExamples
+    );
+
     const { raw } = await callGemini(prompt);
     const parsed = safeParseJSON(raw);
-    const batchRanking = Array.isArray(parsed.ordered_items) ? parsed.ordered_items : [];
+    const batchRanking = Array.isArray(parsed.ordered_items)
+      ? parsed.ordered_items
+      : [];
+
     allRanking.push(...batchRanking);
   }
 
@@ -1672,8 +1769,13 @@ async function rankBatch(product, findings, scannerType) {
     scanner_type: scannerType,
   }));
 }
-
-function buildRankPrompt(product, batch, scannerType, developerFeedback = []) {
+function buildRankPrompt(
+  product,
+  batch,
+  scannerType,
+  developerFeedback = [],
+  datasetExamples = []
+) {
   
   const developerFeedbackBlock = developerFeedback.length
     ? `
@@ -1704,6 +1806,69 @@ Rules to extract from this feedback:
 `
     : `No previous developer feedback. Use default ranking rules only.`;
 
+  const datasetExamplesBlock = datasetExamples.length
+  ? `
+===== SCANNER-SPECIFIC DATASET EXAMPLES =====
+
+These are previous AI rankings corrected by developers.
+Use them as examples to improve the current ranking.
+
+${JSON.stringify(
+  datasetExamples.map(e => ({
+    previous_product_id: e.product_id,
+    title: e.title,
+    severity: e.severity,
+
+    trivy_context: {
+      cve_id: e.cve_id || "",
+      package_name: e.package_name || "",
+      fixed_version: e.fixed_version || "",
+      epss_score: e.epss_score || 0,
+      epss_percentile: e.epss_percentile || 0,
+      is_kev: e.is_kev || false,
+    },
+
+    owasp_context: {
+      url: e.url || "",
+      method: e.method || "",
+      parameter: e.parameter || "",
+      attack_present: !!e.attack,
+      evidence_present: !!e.evidence,
+      cwe: e.cwe || "",
+      plugin_id: e.plugin_id || "",
+      owasp_category: e.owasp_category || "",
+    },
+
+    ai_rank_was: e.ai_rank,
+    ai_priority_was: e.ai_priority_label,
+    ai_reason_was: e.ai_reason,
+    developer_corrected_rank: e.dev_rank,
+    developer_reason: e.dev_reason,
+    correction_direction:
+      e.dev_rank < e.ai_rank
+        ? "PROMOTED"
+        : e.dev_rank > e.ai_rank
+          ? "DEMOTED"
+          : "ACCEPTED"
+  })),
+  null,
+  2
+)}
+
+How to use these examples:
+- If developers PROMOTED a similar finding, rank similar current findings higher.
+- If developers DEMOTED a similar finding, rank similar current findings lower.
+- If developers ACCEPTED the AI rank, use it as confirmation of the ranking criteria.
+- Use developer_reason to understand business/security context.
+- Do not copy ranks blindly; generalize the pattern.
+- Do not mention dataset examples or developer feedback in the final reason.
+================================================
+`
+  : `
+No scanner-specific dataset examples are available yet.
+Use default ranking rules only.
+`;
+
   const baseRules = `
 Return ONLY valid JSON:
 {
@@ -1726,10 +1891,14 @@ Rules:
 - If developer feedback influenced the ranking, apply it silently and justify using security criteria.
 - No markdown, no text outside JSON.
 - Consider previous developer corrections when available.
+- Use scanner-specific dataset examples when available.
+- Dataset examples are more important than generic rules when they show repeated developer preferences.
 
 Product: ${product.name}
 
 ${developerFeedbackBlock}
+
+${datasetExamplesBlock}
 
 Current findings to prioritize:
 ${JSON.stringify(batch, null, 2)}
@@ -1962,7 +2131,51 @@ app.get("/api/repositories/:id/trivy-ml-rank-findings", async (req, res) => {
     });
   }
 });
+app.get("/api/repositories/:id/adaptive-ranking-stats", async (req, res) => {
+  try {
+    const productId = Number(req.params.id);
 
+    const trivy = await pool.query(
+      `
+      SELECT
+        COUNT(*) AS total_examples,
+        COUNT(*) FILTER (WHERE dev_rank IS NOT NULL) AS feedback_examples,
+        COUNT(*) FILTER (WHERE dev_rank < ai_rank) AS promoted,
+        COUNT(*) FILTER (WHERE dev_rank > ai_rank) AS demoted,
+        COUNT(*) FILTER (WHERE dev_rank = ai_rank) AS accepted
+      FROM trivy_ranking_dataset
+      WHERE product_id <> $1
+      `,
+      [productId]
+    );
+
+    const owasp = await pool.query(
+      `
+      SELECT
+        COUNT(*) AS total_examples,
+        COUNT(*) FILTER (WHERE dev_rank IS NOT NULL) AS feedback_examples,
+        COUNT(*) FILTER (WHERE dev_rank < ai_rank) AS promoted,
+        COUNT(*) FILTER (WHERE dev_rank > ai_rank) AS demoted,
+        COUNT(*) FILTER (WHERE dev_rank = ai_rank) AS accepted
+      FROM owasp_ranking_dataset
+      WHERE product_id <> $1
+      `,
+      [productId]
+    );
+
+    res.json({
+      product_id: productId,
+      trivy: trivy.rows[0],
+      owasp: owasp.rows[0],
+      message: "Adaptive ranking memory statistics"
+    });
+  } catch (error) {
+    console.error("Adaptive ranking stats error:", error.message);
+    res.status(500).json({
+      error: "Failed to fetch adaptive ranking stats",
+    });
+  }
+});
 // Endpoint backend
 app.get("/api/repositories/:id/ranking-metrics", async (req, res) => {
   const productId = req.params.id;
