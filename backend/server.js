@@ -2045,7 +2045,134 @@ app.get("/api/repositories/:id/ranking-metrics", async (req, res) => {
   });
 });
 
+async function saveTrivyDataset(productId, finding, rankingItem) {
+  await pool.query(
+    `
+    INSERT INTO trivy_ranking_dataset (
+      product_id,
+      finding_id,
+      title,
+      severity,
+      scanner,
+      cve_id,
+      package_name,
+      installed_version,
+      fixed_version,
+      epss_score,
+      epss_percentile,
+      is_kev,
+      ai_rank,
+      ai_priority_label,
+      ai_reason,
+      updated_at
+    )
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,now())
+    ON CONFLICT (product_id, finding_id)
+    DO UPDATE SET
+      title = EXCLUDED.title,
+      severity = EXCLUDED.severity,
+      scanner = EXCLUDED.scanner,
+      cve_id = EXCLUDED.cve_id,
+      package_name = EXCLUDED.package_name,
+      installed_version = EXCLUDED.installed_version,
+      fixed_version = EXCLUDED.fixed_version,
+      epss_score = EXCLUDED.epss_score,
+      epss_percentile = EXCLUDED.epss_percentile,
+      is_kev = EXCLUDED.is_kev,
+      ai_rank = EXCLUDED.ai_rank,
+      ai_priority_label = EXCLUDED.ai_priority_label,
+      ai_reason = EXCLUDED.ai_reason,
+      updated_at = now()
+    `,
+    [
+      Number(productId),
+      Number(finding.id),
 
+      finding.title || "",
+      finding.severity || "",
+      finding.scanner || "Trivy",
+
+      extractCveId(finding.title || ""),
+      extractPackageFromTitle(finding.title || ""),
+      extractInstalledVersion(finding.title || ""),
+      extractFixedVersion(finding.description || ""),
+
+      Number(finding.epss_score || 0),
+      Number(finding.epss_percentile || 0),
+      Boolean(finding.is_kev || false),
+
+      Number(rankingItem.rank),
+      rankingItem.priority_label || "Low",
+      rankingItem.reason || "",
+    ]
+  );
+}
+
+
+async function saveOwaspDataset(productId, finding, rankingItem) {
+  await pool.query(
+    `
+    INSERT INTO owasp_ranking_dataset (
+      product_id,
+      finding_id,
+      title,
+      severity,
+      scanner,
+      url,
+      method,
+      parameter,
+      attack,
+      evidence,
+      cwe,
+      plugin_id,
+      owasp_category,
+      ai_rank,
+      ai_priority_label,
+      ai_reason,
+      updated_at
+    )
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,now())
+    ON CONFLICT (product_id, finding_id)
+    DO UPDATE SET
+      title = EXCLUDED.title,
+      severity = EXCLUDED.severity,
+      scanner = EXCLUDED.scanner,
+      url = EXCLUDED.url,
+      method = EXCLUDED.method,
+      parameter = EXCLUDED.parameter,
+      attack = EXCLUDED.attack,
+      evidence = EXCLUDED.evidence,
+      cwe = EXCLUDED.cwe,
+      plugin_id = EXCLUDED.plugin_id,
+      owasp_category = EXCLUDED.owasp_category,
+      ai_rank = EXCLUDED.ai_rank,
+      ai_priority_label = EXCLUDED.ai_priority_label,
+      ai_reason = EXCLUDED.ai_reason,
+      updated_at = now()
+    `,
+    [
+      Number(productId),
+      Number(finding.id),
+
+      finding.title || "",
+      finding.severity || "",
+      finding.scanner || "ZAP",
+
+      finding.url || "",
+      finding.method || "",
+      finding.parameter || "",
+      finding.attack || "",
+      finding.evidence || "",
+      finding.cwe || "",
+      finding.plugin_id || "",
+      finding.owasp_category || "",
+
+      Number(rankingItem.rank),
+      rankingItem.priority_label || "Low",
+      rankingItem.reason || "",
+    ]
+  );
+}
 
 app.post("/api/repositories/:id/ai-rank-run", async (req, res) => {
   try {
@@ -2100,37 +2227,51 @@ const findings = findingsResult.rows
       try {
         const aiRanking = await rankFindingsWithVertex(product, findings);
 
-        for (const item of aiRanking) {
-         await pool.query(
-  `
-  INSERT INTO finding_ai_ranking (
-    finding_id,
-    product_id,
-    ai_rank,
-    ai_priority_label,
-    ai_ranking_reason,
-    scanner_type,
-    updated_at
-  )
-  VALUES ($1,$2,$3,$4,$5,$6,now())
-  ON CONFLICT (finding_id)
-  DO UPDATE SET
-    ai_rank = EXCLUDED.ai_rank,
-    ai_priority_label = EXCLUDED.ai_priority_label,
-    ai_ranking_reason = EXCLUDED.ai_ranking_reason,
-    scanner_type = EXCLUDED.scanner_type,
-    updated_at = now()
-  `,
-  [
-    Number(item.finding_id),
-    Number(productId),
-    Number(item.rank),
-    item.priority_label || "Low",
-    item.reason || "",
-    item.scanner_type || "unknown",
-  ]
-);
-        }
+for (const item of aiRanking) {
+  const originalFinding = findings.find(
+    (f) => Number(f.id) === Number(item.finding_id)
+  );
+
+  if (!originalFinding) continue;
+
+  await pool.query(
+    `
+    INSERT INTO finding_ai_ranking (
+      finding_id,
+      product_id,
+      ai_rank,
+      ai_priority_label,
+      ai_ranking_reason,
+      scanner_type,
+      updated_at
+    )
+    VALUES ($1,$2,$3,$4,$5,$6,now())
+    ON CONFLICT (finding_id)
+    DO UPDATE SET
+      ai_rank = EXCLUDED.ai_rank,
+      ai_priority_label = EXCLUDED.ai_priority_label,
+      ai_ranking_reason = EXCLUDED.ai_ranking_reason,
+      scanner_type = EXCLUDED.scanner_type,
+      updated_at = now()
+    `,
+    [
+      Number(item.finding_id),
+      Number(productId),
+      Number(item.rank),
+      item.priority_label || "Low",
+      item.reason || "",
+      item.scanner_type || "unknown",
+    ]
+  );
+
+  if (item.scanner_type === "trivy") {
+    await saveTrivyDataset(productId, originalFinding, item);
+  }
+
+  if (item.scanner_type === "zap") {
+    await saveOwaspDataset(productId, originalFinding, item);
+  }
+}
 
         console.log("AI ranking saved for product", productId);
       } catch (e) {
