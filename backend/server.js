@@ -1721,6 +1721,9 @@ Rules:
 - Include every finding_id exactly once.
 - rank starts at 1 inside this batch.
 - reason must be 1 short sentence.
+- reason must explain only the technical/security risk.
+- Do NOT mention developer feedback, developer corrections, learned rules, or previous rankings in reason.
+- If developer feedback influenced the ranking, apply it silently and justify using security criteria.
 - No markdown, no text outside JSON.
 - Consider previous developer corrections when available.
 
@@ -2131,7 +2134,7 @@ async function saveOwaspDataset(productId, finding, rankingItem) {
       ai_reason,
       updated_at
     )
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,now())
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,now())
     ON CONFLICT (product_id, finding_id)
     DO UPDATE SET
       title = EXCLUDED.title,
