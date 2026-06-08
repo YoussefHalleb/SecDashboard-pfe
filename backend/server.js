@@ -2,7 +2,7 @@ const express = require("express");
 const axios = require("axios");
 const cors = require("cors");
 require("dotenv").config();
-const cookieParser = require("cookie-parser"); 
+const cookieParser = require("cookie-parser");
 const pool = require("./db");
 const multer = require("multer");
 const path = require("path");
@@ -12,6 +12,7 @@ const { createJiraIssue } = require("./jiraClient");
 const { callGeminiWithGrounding, callGemini } = require("./vertexClient");
 const { parseZapHtmlFile } = require("./zapParser");
 const { getSecret } = require("./secretManager");
+const { router: authRouter, authMiddleware } = require("./routes/auth");
 function safeParseJSON(raw) {
   try {
     let cleaned = raw.replace(/```json|```/gi, "").trim();
@@ -83,61 +84,10 @@ app.use(
     credentials: true,
   }),
 );
+app.use("/auth", authRouter);
 
 const DEFECTDOJO_URL = process.env.DEFECTDOJO_URL;
 const DEFECTDOJO_TOKEN = process.env.DEFECTDOJO_API_KEY;
-
-const bcrypt = require("bcrypt");
-const jwt = require("jsonwebtoken");
-const { OAuth2Client } = require("google-auth-library");
-
-let googleClient;
-
-function getGoogleClient() {
-  if (!googleClient) {
-    googleClient = new OAuth2Client(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET,
-      process.env.GOOGLE_REDIRECT_URI
-    );
-  }
-
-  return googleClient;
-}
-
-function signToken(user) {
-  return jwt.sign({ sub: user.id, email: user.email }, process.env.JWT_SECRET, {
-    expiresIn: "7d",
-  });
-}
-function setAuthCookie(res, token) {
-  res.cookie("token", token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    maxAge: 7 * 24 * 3600 * 1000,
-  });
-}
-async function authMiddleware(req, res, next) {
-  const token = req.cookies?.token;
-  if (!token) return res.status(401).json({ error: "Not authenticated" });
-
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    const { rows } = await pool.query(
-      `SELECT id, email, role FROM users WHERE id = $1`,
-      [decoded.sub]
-    );
-
-    if (!rows[0]) return res.status(401).json({ error: "User not found" });
-
-    req.user = { ...decoded, role: rows[0].role };
-    next();
-  } catch (e) {
-    return res.status(401).json({ error: "Invalid token" });
-  }
-}
 
 const headers = {
   Authorization: `Token ${DEFECTDOJO_TOKEN}`,
@@ -151,193 +101,57 @@ function requireRole(role) {
   };
 }
 // REGISTER
-app.post("/auth/register", async (req, res) => {
-  try {
-    const { email, password } = req.body;
-
-    if (!email || !password)
-      return res.status(400).json({ error: "Missing fields" });
-
-    if (password.length < 8)
-      return res.status(400).json({ error: "Password too short (min 8)" });
-
-    const password_hash = await bcrypt.hash(password, 12);
-
-    const result = await pool.query(
-      `INSERT INTO users (email, password_hash)
-       VALUES ($1, $2)
-       RETURNING id, email`,
-      [email, password_hash],
-    );
-
-    const user = result.rows[0];
-    const token = signToken(user);
-
-    setAuthCookie(res, token);
-
-    res.json(user);
-  } catch (err) {
-    console.error("REGISTER ERROR:", err.message);
-    return res.status(400).json({ error: err.message });
-  }
-});
 
 // LOGIN
-app.post("/auth/login", async (req, res) => {
-  try {
-    const { email, password } = req.body;
-
-    if (!email || !password)
-      return res.status(400).json({ error: "Missing fields" });
-
-    const result = await pool.query(
-      `SELECT id, email, password_hash
-       FROM users
-       WHERE email = $1`,
-      [email],
-    );
-
-   const user = result.rows[0];
-if (!user) return res.status(401).json({ error: "Invalid credentials" });
-
-if (!user.password_hash) {
-  return res.status(401).json({
-    error: "Ce compte utilise Google Login. Connectez-vous avec Google.",
-  });
-}
-
-const ok = await bcrypt.compare(password, user.password_hash);
-if (!ok) return res.status(401).json({ error: "Invalid credentials" });
-
-    const token = signToken(user);
-
-    setAuthCookie(res, token);
-
-    res.json({ id: user.id, email: user.email });
-  } catch (err) {
-    return res.status(500).json({ error: "Login failed" });
-  }
-});
-
-
-// GOOGLE LOGIN - START
-app.get("/auth/google", (req, res) => {
-  const url = getGoogleClient().generateAuthUrl({
-    access_type: "offline",
-    scope: ["openid", "email", "profile"],
-    prompt: "select_account",
-  });
-
-  res.redirect(url);
-});
 
 // GOOGLE LOGIN - CALLBACK
-app.get("/auth/google/callback", async (req, res) => {
-  try {
-    const { code } = req.query;
 
-    if (!code) {
-      return res.redirect(`${process.env.CLIENT_ORIGIN}/?error=google_login_failed`);
-    }
-
-   const { tokens } = await getGoogleClient().getToken(code);
-
-    const ticket = await getGoogleClient().verifyIdToken({
-      idToken: tokens.id_token,
-      audience: process.env.GOOGLE_CLIENT_ID,
-    });
-
-    const payload = ticket.getPayload();
-
-    const googleId = payload.sub;
-    const email = payload.email;
-    const name = payload.name;
-    const picture = payload.picture;
-
-    if (!email || !payload.email_verified) {
-      return res.redirect(`${process.env.CLIENT_ORIGIN}/?error=email_not_verified`);
-    }
-
-    let result = await pool.query(
-      `SELECT id, email, role FROM users WHERE email = $1`,
-      [email]
-    );
-
-    let user = result.rows[0];
-
-    if (!user) {
-      result = await pool.query(
-        `INSERT INTO users (email, password_hash, google_id, name, avatar_url)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING id, email, role`,
-        [email, null, googleId, name || null, picture || null]
-      );
-
-      user = result.rows[0];
-    } else {
-      await pool.query(
-        `UPDATE users
-         SET google_id = COALESCE(google_id, $1),
-             name = COALESCE(name, $2),
-             avatar_url = COALESCE(avatar_url, $3)
-         WHERE id = $4`,
-        [googleId, name || null, picture || null, user.id]
-      );
-    }
-
-    const token = signToken(user);
-    setAuthCookie(res, token);
-
-    return res.redirect(process.env.CLIENT_ORIGIN);
-  } catch (err) {
-    console.error("GOOGLE LOGIN ERROR:", err.message);
-    return res.redirect(`${process.env.CLIENT_ORIGIN}/?error=google_login_failed`);
-  }
-});
-
-
-app.get("/auth/me", authMiddleware, async (req, res) => {
-  res.json({ id: req.user.sub, email: req.user.email, role: req.user.role });
-});
 // LIST ALL USERS
-app.get("/api/admin/users", authMiddleware, requireRole("admin"), async (req, res) => {
-  const { rows } = await pool.query(
-    `SELECT id, email, role, created_at FROM users ORDER BY created_at DESC`
-  );
-  res.json(rows);
-});
+app.get(
+  "/api/admin/users",
+  authMiddleware,
+  requireRole("admin"),
+  async (req, res) => {
+    const { rows } = await pool.query(
+      `SELECT id, email, role, created_at FROM users ORDER BY created_at DESC`,
+    );
+    res.json(rows);
+  },
+);
 
 // CHANGE USER ROLE
-app.patch("/api/admin/users/:id/role", authMiddleware, requireRole("admin"), async (req, res) => {
-  const { role } = req.body;
-  if (!["admin", "developer"].includes(role)) {
-    return res.status(400).json({ error: "Invalid role" });
-  }
-  const { rows } = await pool.query(
-    `UPDATE users SET role = $1 WHERE id = $2 RETURNING id, email, role`,
-    [role, req.params.id]
-  );
-  res.json(rows[0]);
-});
+app.patch(
+  "/api/admin/users/:id/role",
+  authMiddleware,
+  requireRole("admin"),
+  async (req, res) => {
+    const { role } = req.body;
+    if (!["admin", "developer"].includes(role)) {
+      return res.status(400).json({ error: "Invalid role" });
+    }
+    const { rows } = await pool.query(
+      `UPDATE users SET role = $1 WHERE id = $2 RETURNING id, email, role`,
+      [role, req.params.id],
+    );
+    res.json(rows[0]);
+  },
+);
 
 // DELETE USER
-app.delete("/api/admin/users/:id", authMiddleware, requireRole("admin"), async (req, res) => {
-  try {
-    await pool.query(`DELETE FROM users WHERE id = $1`, [req.params.id]);
-    res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ error: "Delete user failed" });
-  }
-});
+app.delete(
+  "/api/admin/users/:id",
+  authMiddleware,
+  requireRole("admin"),
+  async (req, res) => {
+    try {
+      await pool.query(`DELETE FROM users WHERE id = $1`, [req.params.id]);
+      res.json({ success: true });
+    } catch (e) {
+      res.status(500).json({ error: "Delete user failed" });
+    }
+  },
+);
 // LOGOUT
-app.post("/auth/logout", (req, res) => {
-  res.clearCookie("token", {
-  httpOnly: true,
-  sameSite: "lax",
-  secure: process.env.NODE_ENV === "production",
-});
-  res.json({ ok: true });
-});
 
 ///////////////////////////////////////////////////////
 // FUNCTION: FETCH ALL PAGES FROM DEFECTDOJO API
@@ -656,36 +470,41 @@ app.post("/api/products/:id/sync-zap-fields", async (req, res) => {
   }
 });
 
-app.delete("/api/products/:id", authMiddleware, requireRole("admin"), async (req, res) => {
-  const productId = req.params.id;
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    await client.query(
-      `DELETE FROM finding_recommendations WHERE finding_id IN (SELECT id FROM findings WHERE product_id = $1)`,
-      [productId],
-    );
-    await client.query(
-      `DELETE FROM finding_ai_analysis WHERE finding_id IN (SELECT id FROM findings WHERE product_id = $1)`,
-      [productId],
-    );
-    await client.query(
-      `DELETE FROM performance_results WHERE product_id = $1`,
-      [productId],
-    );
-    await client.query(`DELETE FROM findings WHERE product_id = $1`, [
-      productId,
-    ]);
-    await client.query(`DELETE FROM products WHERE id = $1`, [productId]);
-    await client.query("COMMIT");
-    res.json({ success: true });
-  } catch (e) {
-    await client.query("ROLLBACK");
-    res.status(500).json({ error: "Delete failed", details: e.message });
-  } finally {
-    client.release();
-  }
-});
+app.delete(
+  "/api/products/:id",
+  authMiddleware,
+  requireRole("admin"),
+  async (req, res) => {
+    const productId = req.params.id;
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `DELETE FROM finding_recommendations WHERE finding_id IN (SELECT id FROM findings WHERE product_id = $1)`,
+        [productId],
+      );
+      await client.query(
+        `DELETE FROM finding_ai_analysis WHERE finding_id IN (SELECT id FROM findings WHERE product_id = $1)`,
+        [productId],
+      );
+      await client.query(
+        `DELETE FROM performance_results WHERE product_id = $1`,
+        [productId],
+      );
+      await client.query(`DELETE FROM findings WHERE product_id = $1`, [
+        productId,
+      ]);
+      await client.query(`DELETE FROM products WHERE id = $1`, [productId]);
+      await client.query("COMMIT");
+      res.json({ success: true });
+    } catch (e) {
+      await client.query("ROLLBACK");
+      res.status(500).json({ error: "Delete failed", details: e.message });
+    } finally {
+      client.release();
+    }
+  },
+);
 app.post("/api/products/:id/ai-from-zap", async (req, res) => {
   try {
     const { rows } = await pool.query(
@@ -935,9 +754,9 @@ app.post("/api/ai/recommendations", async (req, res) => {
       return res.json({ items: [] });
     }
 
-   const MAX_ITEMS = 5;
-const selected = vulnerabilities.slice(0, MAX_ITEMS);
-const findingIds = selected.map((v) => v.id);
+    const MAX_ITEMS = 5;
+    const selected = vulnerabilities.slice(0, MAX_ITEMS);
+    const findingIds = selected.map((v) => v.id);
 
     // 1) Vérifier si les recommendations existent déjà
     const existing = await pool.query(
@@ -1039,7 +858,7 @@ const findingIds = selected.map((v) => v.id);
     // APRÈS - par ça :
     const allRaws = [];
     for (const vuln of summary) {
-  const prompt = `
+      const prompt = `
 You are a senior Application Security Engineer analyzing vulnerabilities from a security scan.
 
 Return ONLY valid JSON in this exact format:
@@ -1090,16 +909,16 @@ Product: ${product}
 Findings JSON:
 ${JSON.stringify([vuln], null, 2)}
 `;
-  console.log(`\n🔎 Analyzing vuln #${vuln.finding_id}: ${vuln.title}`);
-  try {
-    const { raw } = await callGeminiWithGrounding(prompt);
-    allRaws.push(raw);
-    console.log(`✅ Done vuln #${vuln.finding_id}`);
-  } catch (err) {
-    console.error(`❌ Error vuln #${vuln.finding_id}:`, err.message);
-    throw err;
-  }
-}
+      console.log(`\n🔎 Analyzing vuln #${vuln.finding_id}: ${vuln.title}`);
+      try {
+        const { raw } = await callGeminiWithGrounding(prompt);
+        allRaws.push(raw);
+        console.log(`✅ Done vuln #${vuln.finding_id}`);
+      } catch (err) {
+        console.error(`❌ Error vuln #${vuln.finding_id}:`, err.message);
+        throw err;
+      }
+    }
 
     const parsed = { items: [] };
     for (const raw of allRaws) {
@@ -1192,7 +1011,7 @@ app.post("/api/ai/analyze", async (req, res) => {
     }
 
     const MAX_ITEMS = 5;
-const selected = vulnerabilities.slice(0, MAX_ITEMS);
+    const selected = vulnerabilities.slice(0, MAX_ITEMS);
     const findingIds = selected.map((v) => v.id);
 
     const existing = await client.query(
@@ -1397,7 +1216,7 @@ async function getTrivyDatasetExamples(productId) {
     ORDER BY updated_at DESC
     LIMIT 15
     `,
-    [productId]
+    [productId],
   );
 
   return rows;
@@ -1432,13 +1251,11 @@ async function getOwaspDatasetExamples(productId) {
     ORDER BY updated_at DESC
     LIMIT 15
     `,
-    [productId]
+    [productId],
   );
 
   return rows;
 }
-
-
 
 function predictTrivyRankBatchWithML(findings) {
   return new Promise((resolve) => {
@@ -1506,7 +1323,7 @@ app.get("/api/repositories/:id/dataset-rank-findings", async (req, res) => {
       WHERE product_id = $1
       ORDER BY ai_rank ASC
       `,
-      [productId]
+      [productId],
     );
 
     const owasp = await pool.query(
@@ -1536,7 +1353,7 @@ app.get("/api/repositories/:id/dataset-rank-findings", async (req, res) => {
       WHERE product_id = $1
       ORDER BY ai_rank ASC
       `,
-      [productId]
+      [productId],
     );
 
     const items = [...trivy.rows, ...owasp.rows];
@@ -1556,7 +1373,6 @@ app.get("/api/repositories/:id/dataset-rank-findings", async (req, res) => {
     });
   }
 });
-
 
 function predictPriorityBatchWithML(findings) {
   return new Promise((resolve) => {
@@ -1669,8 +1485,8 @@ async function fetchKevCatalog() {
 function normalizeFinding(f, epssMap, kevMap) {
   const scanner = (f.scanner || "").toLowerCase();
   const isTrivy =
-  scanner.includes("trivy") ||
-  (f.title || "").toUpperCase().startsWith("CVE-");
+    scanner.includes("trivy") ||
+    (f.title || "").toUpperCase().startsWith("CVE-");
   const isZap = scanner.includes("zap");
 
   if (isTrivy) {
@@ -1685,7 +1501,10 @@ function normalizeFinding(f, epssMap, kevMap) {
 
       title: f.title,
       severity: f.severity,
-      description_summary: (f.description || "").split("\n").slice(0, 3).join(" "),
+      description_summary: (f.description || "")
+        .split("\n")
+        .slice(0, 3)
+        .join(" "),
 
       cve_id: cveId,
       package_name: extractPackageFromTitle(f.title),
@@ -1739,10 +1558,15 @@ function chunkArray(array, size) {
   return chunks;
 }
 
-async function getDeveloperRankingFeedbackForVertex(productId, scannerType, currentFindings = []) {
-  const titles = currentFindings.map(f => f.title || "");
+async function getDeveloperRankingFeedbackForVertex(
+  productId,
+  scannerType,
+  currentFindings = [],
+) {
+  const titles = currentFindings.map((f) => f.title || "");
 
-  const { rows } = await pool.query(`
+  const { rows } = await pool.query(
+    `
     SELECT
       f.title,
       f.severity,
@@ -1765,25 +1589,35 @@ async function getDeveloperRankingFeedbackForVertex(productId, scannerType, curr
       CASE WHEN f.title = ANY($2::text[]) THEN 0 ELSE 1 END,
       d.created_at DESC
     LIMIT 20
-  `, [scannerType, titles]);
+  `,
+    [scannerType, titles],
+  );
 
-  console.log(`📋 Developer feedback récupéré: ${rows.length} corrections (tous produits)`);
-  rows.forEach(r => {
-    console.log(`  → "${r.title}" : AI rank=${r.ai_rank} → Dev rank=${r.developer_rank} (${r.developer_rank < r.ai_rank ? "PROMOTED" : "DEMOTED"})`);
+  console.log(
+    `📋 Developer feedback récupéré: ${rows.length} corrections (tous produits)`,
+  );
+  rows.forEach((r) => {
+    console.log(
+      `  → "${r.title}" : AI rank=${r.ai_rank} → Dev rank=${r.developer_rank} (${r.developer_rank < r.ai_rank ? "PROMOTED" : "DEMOTED"})`,
+    );
   });
 
   return rows;
 }
 
 async function rankFindingsWithVertex(product, findings) {
-  const cveIds = findings.map(f => extractCveId(f.title || "")).filter(Boolean);
+  const cveIds = findings
+    .map((f) => extractCveId(f.title || ""))
+    .filter(Boolean);
   const epssMap = await fetchEpssForCves(cveIds);
   const kevMap = await fetchKevCatalog();
-  const normalized = findings.map(f => normalizeFinding(f, epssMap, kevMap));
+  const normalized = findings.map((f) => normalizeFinding(f, epssMap, kevMap));
 
-  const trivyFindings   = normalized.filter(f => f.scanner_type === "trivy");
-  const zapFindings     = normalized.filter(f => f.scanner_type === "zap");
-  const unknownFindings = normalized.filter(f => f.scanner_type === "unknown");
+  const trivyFindings = normalized.filter((f) => f.scanner_type === "trivy");
+  const zapFindings = normalized.filter((f) => f.scanner_type === "zap");
+  const unknownFindings = normalized.filter(
+    (f) => f.scanner_type === "unknown",
+  );
 
   let allRanking = [];
 
@@ -1803,7 +1637,6 @@ async function rankFindingsWithVertex(product, findings) {
   return allRanking;
 }
 
-
 async function rankBatch(product, findings, scannerType) {
   const batches = chunkArray(findings, 15);
   let allRanking = [];
@@ -1811,7 +1644,7 @@ async function rankBatch(product, findings, scannerType) {
   const developerFeedback = await getDeveloperRankingFeedbackForVertex(
     product.id,
     scannerType,
-    findings
+    findings,
   );
 
   let datasetExamples = [];
@@ -1825,7 +1658,7 @@ async function rankBatch(product, findings, scannerType) {
   }
 
   console.log(
-    `📚 Dataset examples for ${scannerType}: ${datasetExamples.length}`
+    `📚 Dataset examples for ${scannerType}: ${datasetExamples.length}`,
   );
 
   for (const batch of batches) {
@@ -1834,7 +1667,7 @@ async function rankBatch(product, findings, scannerType) {
       batch,
       scannerType,
       developerFeedback,
-      datasetExamples
+      datasetExamples,
     );
 
     const { raw } = await callGemini(prompt);
@@ -1857,15 +1690,14 @@ function buildRankPrompt(
   batch,
   scannerType,
   developerFeedback = [],
-  datasetExamples = []
+  datasetExamples = [],
 ) {
-  
   const developerFeedbackBlock = developerFeedback.length
     ? `
 ===== DEVELOPER FEEDBACK (apply these learned rules) =====
 
 ${JSON.stringify(
-  developerFeedback.map(f => ({
+  developerFeedback.map((f) => ({
     title: f.title,
     severity: f.severity,
     evidence_present: !!f.evidence,
@@ -1877,7 +1709,8 @@ ${JSON.stringify(
     direction: f.developer_rank < f.ai_rank ? "PROMOTED" : "DEMOTED",
     reason: f.developer_reason || "",
   })),
-  null, 2
+  null,
+  2,
 )}
 
 Rules to extract from this feedback:
@@ -1890,14 +1723,14 @@ Rules to extract from this feedback:
     : `No previous developer feedback. Use default ranking rules only.`;
 
   const datasetExamplesBlock = datasetExamples.length
-  ? `
+    ? `
 ===== SCANNER-SPECIFIC DATASET EXAMPLES =====
 
 These are previous AI rankings corrected by developers.
 Use them as examples to improve the current ranking.
 
 ${JSON.stringify(
-  datasetExamples.map(e => ({
+  datasetExamples.map((e) => ({
     previous_product_id: e.product_id,
     title: e.title,
     severity: e.severity,
@@ -1932,10 +1765,10 @@ ${JSON.stringify(
         ? "PROMOTED"
         : e.dev_rank > e.ai_rank
           ? "DEMOTED"
-          : "ACCEPTED"
+          : "ACCEPTED",
   })),
   null,
-  2
+  2,
 )}
 
 How to use these examples:
@@ -1947,7 +1780,7 @@ How to use these examples:
 - Do not mention dataset examples or developer feedback in the final reason.
 ================================================
 `
-  : `
+    : `
 No scanner-specific dataset examples are available yet.
 Use default ranking rules only.
 `;
@@ -2035,15 +1868,12 @@ Previous developer corrections override default rules when relevant.
 ${baseRules}`;
 }
 
-
-
-
 app.get("/api/repositories/:id/developer-rank-feedback", async (req, res) => {
   try {
     const productId = Number(req.params.id);
 
-   const result = await pool.query(
-  `
+    const result = await pool.query(
+      `
   SELECT
     f.*,
     r.ai_rank,
@@ -2059,8 +1889,8 @@ app.get("/api/repositories/:id/developer-rank-feedback", async (req, res) => {
   WHERE d.product_id = $1
   ORDER BY d.developer_rank ASC
   `,
-  [productId]
-);
+      [productId],
+    );
     res.json({
       product_id: productId,
       count: result.rows.length,
@@ -2069,7 +1899,9 @@ app.get("/api/repositories/:id/developer-rank-feedback", async (req, res) => {
     });
   } catch (error) {
     console.error("Get developer ranking feedback error:", error.message);
-    res.status(500).json({ error: "Failed to fetch developer ranking feedback" });
+    res
+      .status(500)
+      .json({ error: "Failed to fetch developer ranking feedback" });
   }
 });
 
@@ -2094,7 +1926,7 @@ app.post("/api/repositories/:id/trivy-ml-rank-run", async (req, res) => {
         )
       ORDER BY f.created_at DESC
       `,
-      [productId]
+      [productId],
     );
 
     const findings = findingsResult.rows;
@@ -2158,7 +1990,7 @@ app.post("/api/repositories/:id/trivy-ml-rank-run", async (req, res) => {
           Number(item.ml_score),
           item.ml_priority || "Low",
           item.ml_reason || "",
-        ]
+        ],
       );
     }
 
@@ -2197,7 +2029,7 @@ app.get("/api/repositories/:id/trivy-ml-rank-findings", async (req, res) => {
       WHERE f.product_id = $1
       ORDER BY ml.ml_rank ASC
       `,
-      [productId]
+      [productId],
     );
 
     return res.json({
@@ -2229,7 +2061,7 @@ app.get("/api/repositories/:id/adaptive-ranking-stats", async (req, res) => {
       FROM trivy_ranking_dataset
       WHERE product_id <> $1
       `,
-      [productId]
+      [productId],
     );
 
     const owasp = await pool.query(
@@ -2243,14 +2075,14 @@ app.get("/api/repositories/:id/adaptive-ranking-stats", async (req, res) => {
       FROM owasp_ranking_dataset
       WHERE product_id <> $1
       `,
-      [productId]
+      [productId],
     );
 
     res.json({
       product_id: productId,
       trivy: trivy.rows[0],
       owasp: owasp.rows[0],
-      message: "Adaptive ranking memory statistics"
+      message: "Adaptive ranking memory statistics",
     });
   } catch (error) {
     console.error("Adaptive ranking stats error:", error.message);
@@ -2263,7 +2095,8 @@ app.get("/api/repositories/:id/adaptive-ranking-stats", async (req, res) => {
 app.get("/api/repositories/:id/ranking-metrics", async (req, res) => {
   const productId = req.params.id;
 
-  const { rows } = await pool.query(`
+  const { rows } = await pool.query(
+    `
     SELECT
       d.finding_id,
       d.ai_rank,
@@ -2276,15 +2109,21 @@ app.get("/api/repositories/:id/ranking-metrics", async (req, res) => {
       AND d.developer_rank IS NOT NULL
       AND d.ai_rank IS NOT NULL
     ORDER BY d.created_at DESC
-  `, [productId]);
+  `,
+    [productId],
+  );
 
   if (rows.length < 3) {
-    return res.json({ error: "Not enough feedback data", minimum: 3, current: rows.length });
+    return res.json({
+      error: "Not enough feedback data",
+      minimum: 3,
+      current: rows.length,
+    });
   }
 
   // ── NDCG ──────────────────────────────────────
   // Relevance = inverse du developer_rank (rang 1 = relevance max)
-  const maxRank = Math.max(...rows.map(r => r.developer_rank));
+  const maxRank = Math.max(...rows.map((r) => r.developer_rank));
 
   function dcg(rankings) {
     return rankings.reduce((sum, item, i) => {
@@ -2294,10 +2133,12 @@ app.get("/api/repositories/:id/ranking-metrics", async (req, res) => {
   }
 
   const sortedByAI = [...rows].sort((a, b) => a.ai_rank - b.ai_rank);
-  const sortedByDev = [...rows].sort((a, b) => a.developer_rank - b.developer_rank);
+  const sortedByDev = [...rows].sort(
+    (a, b) => a.developer_rank - b.developer_rank,
+  );
 
   const actualDCG = dcg(sortedByAI);
-  const idealDCG  = dcg(sortedByDev);
+  const idealDCG = dcg(sortedByDev);
   const ndcg = idealDCG > 0 ? actualDCG / idealDCG : 0;
 
   // ── Kendall Tau ────────────────────────────────
@@ -2306,26 +2147,27 @@ app.get("/api/repositories/:id/ranking-metrics", async (req, res) => {
   let discordant = 0;
   for (let i = 0; i < rows.length; i++) {
     for (let j = i + 1; j < rows.length; j++) {
-      const aiOrder  = rows[i].ai_rank - rows[j].ai_rank;
+      const aiOrder = rows[i].ai_rank - rows[j].ai_rank;
       const devOrder = rows[i].developer_rank - rows[j].developer_rank;
       if (aiOrder * devOrder > 0) concordant++;
       else if (aiOrder * devOrder < 0) discordant++;
     }
   }
   const n = rows.length;
-  const kendallTau = (concordant - discordant) / (n * (n - 1) / 2);
+  const kendallTau = (concordant - discordant) / ((n * (n - 1)) / 2);
 
   // ── Rank Error moyen ───────────────────────────
   // Écart moyen entre ai_rank et developer_rank
-  const avgRankError = rows.reduce((sum, r) => {
-    return sum + Math.abs(r.ai_rank - r.developer_rank);
-  }, 0) / rows.length;
+  const avgRankError =
+    rows.reduce((sum, r) => {
+      return sum + Math.abs(r.ai_rank - r.developer_rank);
+    }, 0) / rows.length;
 
   // ── Top-3 Precision ────────────────────────────
   // Est-ce que le top 3 AI correspond au top 3 dev ?
-  const top3AI  = new Set(sortedByAI.slice(0, 3).map(r => r.finding_id));
-  const top3Dev = new Set(sortedByDev.slice(0, 3).map(r => r.finding_id));
-  const top3Intersection = [...top3AI].filter(id => top3Dev.has(id)).length;
+  const top3AI = new Set(sortedByAI.slice(0, 3).map((r) => r.finding_id));
+  const top3Dev = new Set(sortedByDev.slice(0, 3).map((r) => r.finding_id));
+  const top3Intersection = [...top3AI].filter((id) => top3Dev.has(id)).length;
   const top3Precision = top3Intersection / 3;
 
   res.json({
@@ -2337,10 +2179,16 @@ app.get("/api/repositories/:id/ranking-metrics", async (req, res) => {
       top3_precision: Number(top3Precision.toFixed(2)),
     },
     interpretation: {
-      ndcg: ndcg >= 0.8 ? "Excellent" : ndcg >= 0.6 ? "Good" : "Needs improvement",
-      kendall_tau: kendallTau >= 0.7 ? "Strong agreement" : kendallTau >= 0.4 ? "Moderate agreement" : "Weak agreement",
+      ndcg:
+        ndcg >= 0.8 ? "Excellent" : ndcg >= 0.6 ? "Good" : "Needs improvement",
+      kendall_tau:
+        kendallTau >= 0.7
+          ? "Strong agreement"
+          : kendallTau >= 0.4
+            ? "Moderate agreement"
+            : "Weak agreement",
       top3_precision: `${top3Intersection}/3 critical findings correctly ranked`,
-    }
+    },
   });
 });
 
@@ -2403,10 +2251,9 @@ async function saveTrivyDataset(productId, finding, rankingItem) {
       Number(rankingItem.rank),
       rankingItem.priority_label || "Low",
       rankingItem.reason || "",
-    ]
+    ],
   );
 }
-
 
 async function saveOwaspDataset(productId, finding, rankingItem) {
   await pool.query(
@@ -2469,7 +2316,7 @@ async function saveOwaspDataset(productId, finding, rankingItem) {
       Number(rankingItem.rank),
       rankingItem.priority_label || "Low",
       rankingItem.reason || "",
-    ]
+    ],
   );
 }
 
@@ -2479,7 +2326,7 @@ app.post("/api/repositories/:id/ai-rank-run", async (req, res) => {
 
     const productResult = await pool.query(
       `SELECT id, name FROM products WHERE id = $1`,
-      [productId]
+      [productId],
     );
 
     const product = productResult.rows[0];
@@ -2495,26 +2342,28 @@ app.post("/api/repositories/:id/ai-rank-run", async (req, res) => {
       WHERE product_id = $1
       ORDER BY created_at DESC
       `,
-      [productId]
+      [productId],
     );
 
-   const severityOrder = {
-  Critical: 1,
-  High: 2,
-  Medium: 3,
-  Low: 4,
-};
+    const severityOrder = {
+      Critical: 1,
+      High: 2,
+      Medium: 3,
+      Low: 4,
+    };
 
-const findings = findingsResult.rows
-  .sort((a, b) => {
-    const sa = severityOrder[a.severity] || 99;
-    const sb = severityOrder[b.severity] || 99;
+    const findings = findingsResult.rows
+      .sort((a, b) => {
+        const sa = severityOrder[a.severity] || 99;
+        const sb = severityOrder[b.severity] || 99;
 
-    if (sa !== sb) return sa - sb;
+        if (sa !== sb) return sa - sb;
 
-    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-  })
-  .slice(0, 100);
+        return (
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+      })
+      .slice(0, 100);
 
     res.json({
       success: true,
@@ -2526,15 +2375,15 @@ const findings = findingsResult.rows
       try {
         const aiRanking = await rankFindingsWithVertex(product, findings);
 
-for (const item of aiRanking) {
-  const originalFinding = findings.find(
-    (f) => Number(f.id) === Number(item.finding_id)
-  );
+        for (const item of aiRanking) {
+          const originalFinding = findings.find(
+            (f) => Number(f.id) === Number(item.finding_id),
+          );
 
-  if (!originalFinding) continue;
+          if (!originalFinding) continue;
 
-  await pool.query(
-    `
+          await pool.query(
+            `
     INSERT INTO finding_ai_ranking (
       finding_id,
       product_id,
@@ -2553,24 +2402,24 @@ for (const item of aiRanking) {
       scanner_type = EXCLUDED.scanner_type,
       updated_at = now()
     `,
-    [
-      Number(item.finding_id),
-      Number(productId),
-      Number(item.rank),
-      item.priority_label || "Low",
-      item.reason || "",
-      item.scanner_type || "unknown",
-    ]
-  );
+            [
+              Number(item.finding_id),
+              Number(productId),
+              Number(item.rank),
+              item.priority_label || "Low",
+              item.reason || "",
+              item.scanner_type || "unknown",
+            ],
+          );
 
-  if (item.scanner_type === "trivy") {
-    await saveTrivyDataset(productId, originalFinding, item);
-  }
+          if (item.scanner_type === "trivy") {
+            await saveTrivyDataset(productId, originalFinding, item);
+          }
 
-  if (item.scanner_type === "zap") {
-    await saveOwaspDataset(productId, originalFinding, item);
-  }
-}
+          if (item.scanner_type === "zap") {
+            await saveOwaspDataset(productId, originalFinding, item);
+          }
+        }
 
         console.log("AI ranking saved for product", productId);
       } catch (e) {
@@ -2583,37 +2432,48 @@ for (const item of aiRanking) {
   }
 });
 
-app.post("/api/repositories/:id/developer-rank-feedback", authMiddleware, async (req, res) => {
-  try {
-    const productId = Number(req.params.id);
-    const { items } = req.body;
+app.post(
+  "/api/repositories/:id/developer-rank-feedback",
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const productId = Number(req.params.id);
+      const { items } = req.body;
 
-    if (!Array.isArray(items)) {
-      return res.status(400).json({ error: "items must be an array" });
-    }
+      if (!Array.isArray(items)) {
+        return res.status(400).json({ error: "items must be an array" });
+      }
 
-   
-
-    for (const item of items) {
-  await pool.query(
-  `INSERT INTO developer_ranking_feedback (
+      for (const item of items) {
+        await pool.query(
+          `INSERT INTO developer_ranking_feedback (
     product_id, finding_id, ai_rank, developer_rank,
     ai_priority_label, developer_reason, user_id
   ) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-  [productId, item.finding_id, item.ai_rank, item.developer_rank,
-   item.ai_priority_label, item.developer_reason, req.user.sub]
-);
-    }
+          [
+            productId,
+            item.finding_id,
+            item.ai_rank,
+            item.developer_rank,
+            item.ai_priority_label,
+            item.developer_reason,
+            req.user.sub,
+          ],
+        );
+      }
 
-    res.json({
-      success: true,
-      saved: items.length,
-    });
-  } catch (error) {
-    console.error("Save developer ranking feedback error:", error.message);
-    res.status(500).json({ error: "Failed to save developer ranking feedback" });
-  }
-});
+      res.json({
+        success: true,
+        saved: items.length,
+      });
+    } catch (error) {
+      console.error("Save developer ranking feedback error:", error.message);
+      res
+        .status(500)
+        .json({ error: "Failed to save developer ranking feedback" });
+    }
+  },
+);
 
 app.get("/api/repositories/:id/ai-rank-findings", async (req, res) => {
   try {
@@ -2621,7 +2481,7 @@ app.get("/api/repositories/:id/ai-rank-findings", async (req, res) => {
 
     const productResult = await pool.query(
       `SELECT id, name FROM products WHERE id = $1`,
-      [productId]
+      [productId],
     );
 
     const product = productResult.rows[0];
@@ -2648,7 +2508,7 @@ app.get("/api/repositories/:id/ai-rank-findings", async (req, res) => {
         r.ai_rank ASC,
         f.created_at DESC
       `,
-      [productId]
+      [productId],
     );
 
     res.json({
@@ -2739,9 +2599,7 @@ app.get("/api/repositories/:id/prioritized-findings", async (req, res) => {
 
     const mlResults = await predictPriorityBatchWithML(mlInput);
 
-    const mlMap = new Map(
-      mlResults.map((item) => [Number(item.id), item])
-    );
+    const mlMap = new Map(mlResults.map((item) => [Number(item.id), item]));
 
     const prioritized = rows.map((f) => {
       const ruleResult = computePriorityScore(f, {
@@ -2789,9 +2647,7 @@ app.get("/api/repositories/:id/prioritized-findings", async (req, res) => {
     prioritized.sort((a, b) => b.priority_score - a.priority_score);
 
     const unique = Array.from(
-      new Map(
-        prioritized.map((f) => [`${f.title}-${f.scanner}`, f])
-      ).values(),
+      new Map(prioritized.map((f) => [`${f.title}-${f.scanner}`, f])).values(),
     );
 
     res.json(unique);
@@ -2920,7 +2776,7 @@ app.post(
          FROM finding_recommendations r
          JOIN findings f ON f.id = r.finding_id
          WHERE r.id = $1`,
-        [recId]
+        [recId],
       );
 
       if (recResult.rowCount === 0) {
@@ -2941,7 +2797,7 @@ app.post(
         `UPDATE finding_recommendations
          SET status = 'proposed', approved_by = NULL, approved_at = NULL
          WHERE finding_id = $1 AND status = 'approved'`,
-        [rec.finding_id]
+        [rec.finding_id],
       );
 
       const updated = await client.query(
@@ -2949,7 +2805,7 @@ app.post(
          SET status = 'approved', approved_by = $2, approved_at = now()
          WHERE id = $1
          RETURNING *`,
-        [recId, userId]
+        [recId, userId],
       );
 
       await client.query("COMMIT");
@@ -2959,13 +2815,11 @@ app.post(
       res.json({ ...approvedRec, jira_pending: true });
       const { jira_assignee_id } = req.body;
 
-   
-
       if (rec.jira_issue_key) return;
 
       const userResult = await pool.query(
         `SELECT email FROM users WHERE id = $1`,
-        [userId]
+        [userId],
       );
 
       setImmediate(async () => {
@@ -2983,7 +2837,7 @@ app.post(
                  jira_issue_url = $2,
                  jira_created_at = now()
              WHERE id = $3`,
-            [issueKey, issueUrl, recId]
+            [issueKey, issueUrl, recId],
           );
 
           console.log(`✅ Jira ticket created: ${issueKey}`);
@@ -3001,7 +2855,7 @@ app.post(
     } finally {
       client.release();
     }
-  }
+  },
 );
 
 app.post(
@@ -3016,11 +2870,13 @@ app.post(
          FROM finding_recommendations r
          JOIN findings f ON f.id = r.finding_id
          WHERE r.id = $1 AND r.status = 'approved'`,
-        [recId]
+        [recId],
       );
 
       if (!rows[0]) {
-        return res.status(404).json({ error: "Approved recommendation not found" });
+        return res
+          .status(404)
+          .json({ error: "Approved recommendation not found" });
       }
 
       const rec = rows[0];
@@ -3036,12 +2892,17 @@ app.post(
 
       const userResult = await pool.query(
         `SELECT email FROM users WHERE id = $1`,
-        [req.user.sub]
+        [req.user.sub],
       );
 
       const { issueKey, issueUrl } = await createJiraIssue({
         recommendation: rec,
-        finding: { title: rec.title, severity: rec.severity, scanner: rec.scanner, url: rec.url },
+        finding: {
+          title: rec.title,
+          severity: rec.severity,
+          scanner: rec.scanner,
+          url: rec.url,
+        },
         approvedByEmail: userResult.rows[0]?.email,
       });
 
@@ -3051,24 +2912,27 @@ app.post(
              jira_issue_url  = $2,
              jira_created_at = now()
          WHERE id = $3`,
-        [issueKey, issueUrl, recId]
+        [issueKey, issueUrl, recId],
       );
 
-      res.json({ success: true, jira_issue_key: issueKey, jira_issue_url: issueUrl });
-
+      res.json({
+        success: true,
+        jira_issue_key: issueKey,
+        jira_issue_url: issueUrl,
+      });
     } catch (e) {
-console.error("Manual Jira create error:", {
-  message: e.message,
-  status: e.response?.status,
-  data: e.response?.data,
-});
+      console.error("Manual Jira create error:", {
+        message: e.message,
+        status: e.response?.status,
+        data: e.response?.data,
+      });
 
-res.status(500).json({
-  error: "Failed to create Jira ticket",
-  details: e.response?.data || e.message,
-});
+      res.status(500).json({
+        error: "Failed to create Jira ticket",
+        details: e.response?.data || e.message,
+      });
     }
-  }
+  },
 );
 
 app.post(
@@ -3318,8 +3182,6 @@ async function loadRuntimeSecrets() {
     process.env.JIRA_PROJECT_KEY = await getSecret("jira-project-key");
   }
 
-
-  
   console.log("✅ Runtime secrets loaded");
   console.log("JWT_SECRET length:", process.env.JWT_SECRET?.length || 0);
   console.log("GITHUB_TOKEN length:", process.env.GITHUB_TOKEN?.length || 0);
