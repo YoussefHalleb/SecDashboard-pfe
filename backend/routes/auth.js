@@ -4,8 +4,20 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const { OAuth2Client } = require("google-auth-library");
 const pool = require("../db");
+const crypto = require("crypto");
+const nodemailer = require("nodemailer");
 
 let googleClient;
+
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT || 587),
+  secure: false,
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
 
 function getGoogleClient() {
   if (!googleClient) {
@@ -207,6 +219,129 @@ router.post("/logout", (req, res) => {
     secure: process.env.NODE_ENV === "production",
   });
   res.json({ ok: true });
+});
+
+// FORGOT PASSWORD
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ error: "Email requis" });
+    }
+
+    const result = await pool.query(
+      `SELECT id, email, password_hash FROM users WHERE email = $1`,
+      [email],
+    );
+
+    const user = result.rows[0];
+
+    if (!user) {
+      return res.json({
+        message:
+          "Si un compte existe, un email de réinitialisation a été envoyé.",
+      });
+    }
+
+    if (!user.password_hash) {
+      return res.status(400).json({
+        error: "Ce compte utilise Google Login. Connectez-vous avec Google.",
+      });
+    }
+
+    const resetToken = crypto.randomBytes(32).toString("hex");
+
+    const resetTokenHash = crypto
+      .createHash("sha256")
+      .update(resetToken)
+      .digest("hex");
+
+    const expires = new Date(Date.now() + 1000 * 60 * 30);
+
+    await pool.query(
+      `UPDATE users
+       SET reset_token_hash = $1,
+           reset_token_expires = $2
+       WHERE id = $3`,
+      [resetTokenHash, expires, user.id],
+    );
+
+    const resetUrl = `${process.env.CLIENT_ORIGIN}/reset-password?token=${resetToken}`;
+
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to: user.email,
+      subject: "Réinitialisation de votre mot de passe CodeCure",
+      html: `
+        <p>Bonjour,</p>
+        <p>Vous avez demandé la réinitialisation de votre mot de passe.</p>
+        <p>Cliquez sur ce lien pour choisir un nouveau mot de passe :</p>
+        <p><a href="${resetUrl}">${resetUrl}</a></p>
+        <p>Ce lien expire dans 30 minutes.</p>
+      `,
+    });
+
+    return res.json({
+      message: "Email de réinitialisation envoyé.",
+    });
+  } catch (err) {
+    console.error("FORGOT PASSWORD ERROR:", err);
+    return res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
+// RESET PASSWORD
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { token, password } = req.body;
+
+    if (!token || !password) {
+      return res.status(400).json({ error: "Token et mot de passe requis" });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({
+        error: "Le mot de passe doit contenir au moins 8 caractères",
+      });
+    }
+
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+
+    const result = await pool.query(
+      `SELECT id, email
+       FROM users
+       WHERE reset_token_hash = $1
+         AND reset_token_expires > NOW()`,
+      [tokenHash],
+    );
+
+    const user = result.rows[0];
+
+    if (!user) {
+      return res.status(400).json({
+        error: "Lien invalide ou expiré",
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    await pool.query(
+      `UPDATE users
+       SET password_hash = $1,
+           reset_token_hash = NULL,
+           reset_token_expires = NULL
+       WHERE id = $2`,
+      [passwordHash, user.id],
+    );
+
+    return res.json({
+      message: "Mot de passe modifié avec succès",
+    });
+  } catch (err) {
+    console.error("RESET PASSWORD ERROR:", err);
+    return res.status(500).json({ error: "Erreur serveur" });
+  }
 });
 
 module.exports = { router, authMiddleware, signToken, setAuthCookie };

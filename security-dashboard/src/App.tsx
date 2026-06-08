@@ -3,6 +3,7 @@ import { getMe } from "./services/api";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
+import ResetPassword from "./pages/ResetPassword";
 
 function App() {
   const [user, setUser] = useState<any>(null);
@@ -26,6 +27,13 @@ function App() {
 
   if (loading) {
     return <div>Loading...</div>;
+  }
+
+  // Si l'utilisateur clique sur le lien reçu par email :
+  // http://localhost:5173/reset-password?token=xxxx
+  // on affiche la page ResetPassword
+  if (window.location.pathname === "/reset-password") {
+    return <ResetPassword />;
   }
 
   if (!user) {

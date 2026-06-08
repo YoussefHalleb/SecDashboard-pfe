@@ -24,6 +24,50 @@ export async function register(email: string, password: string) {
   return response.data;
 }
 
+export async function forgotPassword(email: string) {
+  const res = await fetch(
+    `${import.meta.env.VITE_API_URL || ""}/auth/forgot-password`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify({ email }),
+    },
+  );
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    throw { response: { data } };
+  }
+
+  return data;
+}
+
+export async function resetPassword(token: string, password: string) {
+  const res = await fetch(
+    `${import.meta.env.VITE_API_URL || ""}/auth/reset-password`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify({ token, password }),
+    },
+  );
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    throw { response: { data } };
+  }
+
+  return data;
+}
+
 // GET CURRENT USER
 export async function getMe() {
   const response = await api.get("/auth/me");
