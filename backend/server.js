@@ -12,6 +12,7 @@ const { callGeminiWithGrounding, callGemini } = require("./vertexClient");
 const { parseZapHtmlFile } = require("./zapParser");
 const { getSecret } = require("./secretManager");
 const { router: authRouter, authMiddleware } = require("./routes/auth");
+const requireRole = require("./middlewares/requireRole.middleware");
 
 const adminRoutes = require("./routes/admin.routes");
 
