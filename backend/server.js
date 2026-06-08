@@ -16,7 +16,7 @@ const requireRole = require("./middlewares/requireRole.middleware");
 const pipelineRoutes = require("./routes/pipeline.routes");
 const aiRecommendationsRoutes = require("./routes/aiRecommendations.routes");
 const adminRoutes = require("./routes/admin.routes");
-
+const rankingRoutes = require("./routes/ranking.routes");
 function safeParseJSON(raw) {
   try {
     let cleaned = raw.replace(/```json|```/gi, "").trim();
@@ -92,6 +92,7 @@ app.use("/auth", authRouter);
 app.use("/api/admin", adminRoutes);
 app.use("/api/pipeline", pipelineRoutes);
 app.use("/api/ai", aiRecommendationsRoutes);
+app.use("/api/repositories", rankingRoutes);
 const DEFECTDOJO_URL = process.env.DEFECTDOJO_URL;
 const DEFECTDOJO_TOKEN = process.env.DEFECTDOJO_API_KEY;
 
@@ -851,87 +852,6 @@ async function getOwaspDatasetExamples(productId) {
   return rows;
 }
 
-app.get("/api/repositories/:id/dataset-rank-findings", async (req, res) => {
-  try {
-    const productId = Number(req.params.id);
-
-    const trivy = await pool.query(
-      `
-      SELECT
-        product_id,
-        finding_id AS id,
-        title,
-        severity,
-        scanner,
-        cve_id,
-        package_name,
-        installed_version,
-        fixed_version,
-        epss_score,
-        epss_percentile,
-        is_kev,
-        ai_rank,
-        ai_priority_label,
-        ai_reason AS ai_ranking_reason,
-        dev_rank,
-        dev_reason,
-        'trivy' AS scanner_type,
-        updated_at
-      FROM trivy_ranking_dataset
-      WHERE product_id = $1
-      ORDER BY ai_rank ASC
-      `,
-      [productId],
-    );
-
-    const owasp = await pool.query(
-      `
-      SELECT
-        product_id,
-        finding_id AS id,
-        title,
-        severity,
-        scanner,
-        url,
-        method,
-        parameter,
-        attack,
-        evidence,
-        cwe,
-        plugin_id,
-        owasp_category,
-        ai_rank,
-        ai_priority_label,
-        ai_reason AS ai_ranking_reason,
-        dev_rank,
-        dev_reason,
-        'zap' AS scanner_type,
-        updated_at
-      FROM owasp_ranking_dataset
-      WHERE product_id = $1
-      ORDER BY ai_rank ASC
-      `,
-      [productId],
-    );
-
-    const items = [...trivy.rows, ...owasp.rows];
-
-    res.json({
-      product_id: productId,
-      count: items.length,
-      source: "scanner-specific-ranking-datasets",
-      trivy_count: trivy.rows.length,
-      owasp_count: owasp.rows.length,
-      items,
-    });
-  } catch (error) {
-    console.error("Dataset ranking fetch error:", error.message);
-    res.status(500).json({
-      error: "Failed to fetch dataset ranking",
-    });
-  }
-});
-
 function extractCveId(title = "") {
   const match = title.match(/CVE-\d{4}-\d+/i);
   return match ? match[0].toUpperCase() : "";
@@ -1391,89 +1311,6 @@ Previous developer corrections override default rules when relevant.
 ${baseRules}`;
 }
 
-app.get("/api/repositories/:id/developer-rank-feedback", async (req, res) => {
-  try {
-    const productId = Number(req.params.id);
-
-    const result = await pool.query(
-      `
-  SELECT
-    f.*,
-    r.ai_rank,
-    r.ai_priority_label,
-    r.ai_ranking_reason,
-    d.developer_rank,
-    d.developer_reason,
-    u.email AS developer_email
-  FROM developer_ranking_feedback d
-  JOIN findings f ON f.id = d.finding_id
-  LEFT JOIN finding_ai_ranking r ON r.finding_id = f.id
-  LEFT JOIN users u ON u.id = d.user_id
-  WHERE d.product_id = $1
-  ORDER BY d.developer_rank ASC
-  `,
-      [productId],
-    );
-    res.json({
-      product_id: productId,
-      count: result.rows.length,
-      source: "developer-feedback-ranking",
-      items: result.rows,
-    });
-  } catch (error) {
-    console.error("Get developer ranking feedback error:", error.message);
-    res
-      .status(500)
-      .json({ error: "Failed to fetch developer ranking feedback" });
-  }
-});
-
-app.get("/api/repositories/:id/adaptive-ranking-stats", async (req, res) => {
-  try {
-    const productId = Number(req.params.id);
-
-    const trivy = await pool.query(
-      `
-      SELECT
-        COUNT(*) AS total_examples,
-        COUNT(*) FILTER (WHERE dev_rank IS NOT NULL) AS feedback_examples,
-        COUNT(*) FILTER (WHERE dev_rank < ai_rank) AS promoted,
-        COUNT(*) FILTER (WHERE dev_rank > ai_rank) AS demoted,
-        COUNT(*) FILTER (WHERE dev_rank = ai_rank) AS accepted
-      FROM trivy_ranking_dataset
-      WHERE product_id <> $1
-      `,
-      [productId],
-    );
-
-    const owasp = await pool.query(
-      `
-      SELECT
-        COUNT(*) AS total_examples,
-        COUNT(*) FILTER (WHERE dev_rank IS NOT NULL) AS feedback_examples,
-        COUNT(*) FILTER (WHERE dev_rank < ai_rank) AS promoted,
-        COUNT(*) FILTER (WHERE dev_rank > ai_rank) AS demoted,
-        COUNT(*) FILTER (WHERE dev_rank = ai_rank) AS accepted
-      FROM owasp_ranking_dataset
-      WHERE product_id <> $1
-      `,
-      [productId],
-    );
-
-    res.json({
-      product_id: productId,
-      trivy: trivy.rows[0],
-      owasp: owasp.rows[0],
-      message: "Adaptive ranking memory statistics",
-    });
-  } catch (error) {
-    console.error("Adaptive ranking stats error:", error.message);
-    res.status(500).json({
-      error: "Failed to fetch adaptive ranking stats",
-    });
-  }
-});
-
 async function saveTrivyDataset(productId, finding, rankingItem) {
   await pool.query(
     `
@@ -1602,118 +1439,6 @@ async function saveOwaspDataset(productId, finding, rankingItem) {
   );
 }
 
-app.post("/api/repositories/:id/ai-rank-run", async (req, res) => {
-  try {
-    const productId = req.params.id;
-
-    const productResult = await pool.query(
-      `SELECT id, name FROM products WHERE id = $1`,
-      [productId],
-    );
-
-    const product = productResult.rows[0];
-
-    if (!product) {
-      return res.status(404).json({ error: "Product not found" });
-    }
-
-    const findingsResult = await pool.query(
-      `
-      SELECT *
-      FROM findings
-      WHERE product_id = $1
-      ORDER BY created_at DESC
-      `,
-      [productId],
-    );
-
-    const severityOrder = {
-      Critical: 1,
-      High: 2,
-      Medium: 3,
-      Low: 4,
-    };
-
-    const findings = findingsResult.rows
-      .sort((a, b) => {
-        const sa = severityOrder[a.severity] || 99;
-        const sb = severityOrder[b.severity] || 99;
-
-        if (sa !== sb) return sa - sb;
-
-        return (
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        );
-      })
-      .slice(0, 100);
-
-    res.json({
-      success: true,
-      message: "AI ranking started",
-      count: findings.length,
-    });
-
-    setImmediate(async () => {
-      try {
-        const aiRanking = await rankFindingsWithVertex(product, findings);
-
-        for (const item of aiRanking) {
-          const originalFinding = findings.find(
-            (f) => Number(f.id) === Number(item.finding_id),
-          );
-
-          if (!originalFinding) continue;
-
-          await pool.query(
-            `
-    INSERT INTO finding_ai_ranking (
-      finding_id,
-      product_id,
-      ai_rank,
-      ai_priority_label,
-      ai_ranking_reason,
-      scanner_type,
-      updated_at
-    )
-    VALUES ($1,$2,$3,$4,$5,$6,now())
-    ON CONFLICT (finding_id)
-    DO UPDATE SET
-      ai_rank = EXCLUDED.ai_rank,
-      ai_priority_label = EXCLUDED.ai_priority_label,
-      ai_ranking_reason = EXCLUDED.ai_ranking_reason,
-      scanner_type = EXCLUDED.scanner_type,
-      updated_at = now()
-    `,
-            [
-              Number(item.finding_id),
-              Number(productId),
-              Number(item.rank),
-              item.priority_label || "Low",
-              item.reason || "",
-              item.scanner_type || "unknown",
-            ],
-          );
-
-          if (item.scanner_type === "trivy") {
-            await saveTrivyDataset(productId, originalFinding, item);
-          }
-
-          if (item.scanner_type === "zap") {
-            await saveOwaspDataset(productId, originalFinding, item);
-          }
-        }
-
-        console.log("AI ranking saved for product", productId);
-      } catch (e) {
-        console.error("Background AI ranking failed:", e.message);
-      }
-    });
-  } catch (error) {
-    console.error("AI rank run error:", error.message);
-    res.status(500).json({ error: "Failed to start AI ranking" });
-  }
-});
-
 app.post(
   "/api/repositories/:id/developer-rank-feedback",
   authMiddleware,
@@ -1756,60 +1481,6 @@ app.post(
     }
   },
 );
-
-app.get("/api/repositories/:id/ai-rank-findings", async (req, res) => {
-  try {
-    const productId = req.params.id;
-
-    const productResult = await pool.query(
-      `SELECT id, name FROM products WHERE id = $1`,
-      [productId],
-    );
-
-    const product = productResult.rows[0];
-
-    if (!product) {
-      return res.status(404).json({ error: "Product not found" });
-    }
-
-    const result = await pool.query(
-      `
-      SELECT
-        f.*,
-        r.ai_rank,
-        r.ai_priority_label,
-        r.ai_ranking_reason,
-        r.scanner_type,
-        r.updated_at AS ai_ranking_updated_at
-      FROM findings f
-      LEFT JOIN finding_ai_ranking r
-        ON r.finding_id = f.id
-      WHERE f.product_id = $1
-      ORDER BY
-        CASE WHEN r.ai_rank IS NULL THEN 1 ELSE 0 END,
-        r.ai_rank ASC,
-        f.created_at DESC
-      `,
-      [productId],
-    );
-
-    res.json({
-      product_id: product.id,
-      product_name: product.name,
-      count: result.rows.length,
-      source: "database-ai-ranking",
-      items: result.rows.map((row) => ({
-        ...row,
-        ai_rank: row.ai_rank || 9999,
-        ai_priority_label: row.ai_priority_label || "Low",
-        ai_ranking_reason: row.ai_ranking_reason || "Not ranked yet",
-      })),
-    });
-  } catch (error) {
-    console.error("Get AI ranking error:", error.message);
-    res.status(500).json({ error: "Failed to fetch AI ranking" });
-  }
-});
 
 app.get("/api/repositories/:id/prioritized-findings", async (req, res) => {
   try {
