@@ -13,6 +13,7 @@ const { parseZapHtmlFile } = require("./zapParser");
 const { getSecret } = require("./secretManager");
 const { router: authRouter, authMiddleware } = require("./routes/auth");
 const requireRole = require("./middlewares/requireRole.middleware");
+const pipelineRoutes = require("./routes/pipeline.routes");
 
 const adminRoutes = require("./routes/admin.routes");
 
@@ -89,6 +90,7 @@ app.use(
 );
 app.use("/auth", authRouter);
 app.use("/api/admin", adminRoutes);
+app.use("/api/pipeline", pipelineRoutes);
 
 const DEFECTDOJO_URL = process.env.DEFECTDOJO_URL;
 const DEFECTDOJO_TOKEN = process.env.DEFECTDOJO_API_KEY;
@@ -113,57 +115,8 @@ async function fetchAllPages(url) {
   return results;
 }
 
-app.post("/api/pipeline/run", async (req, res) => {
-  try {
-    const { repo_url, repo_branch, app_port } = req.body;
-
-    if (!repo_branch) {
-      return res.status(400).json({ error: "repo_branch is required" });
-    }
-
-    const githubUrl = `https://api.github.com/repos/${process.env.GITHUB_OWNER}/${process.env.GITHUB_REPO}/actions/workflows/${process.env.GITHUB_WORKFLOW_FILE}/dispatches`;
-
-    // ← Répondre immédiatement au frontend
-    res.json({ success: true, message: "Pipeline triggered successfully" });
-
-    // ← Envoyer à GitHub en arrière-plan
-    axios
-      .post(
-        githubUrl,
-        {
-          ref: "main",
-          inputs: {
-            repo_url: repo_url || "",
-            repo_branch: repo_branch || "main",
-            app_port: String(app_port || "80"),
-          },
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
-            Accept: "application/vnd.github+json",
-          },
-          timeout: 30000,
-        },
-      )
-      .catch((e) => {
-        console.error("Pipeline trigger error:", e.response?.data || e.message);
-      });
-  } catch (error) {
-    console.error(
-      "Pipeline trigger error:",
-      error.response?.data || error.message,
-    );
-    if (!res.headersSent) {
-      return res.status(500).json({ error: "Failed to trigger pipeline" });
-    }
-  }
-});
-
-///////////////////////////////////////////////////////
 // GET ALL REPOSITORIES (Products + ALL Findings)
 // + STORE IN POSTGRESQL
-///////////////////////////////////////////////////////
 app.get("/api/repositories", async (req, res) => {
   try {
     // Fetch products
