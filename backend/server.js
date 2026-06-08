@@ -12,6 +12,9 @@ const { callGeminiWithGrounding, callGemini } = require("./vertexClient");
 const { parseZapHtmlFile } = require("./zapParser");
 const { getSecret } = require("./secretManager");
 const { router: authRouter, authMiddleware } = require("./routes/auth");
+
+const adminRoutes = require("./routes/admin.routes");
+
 function safeParseJSON(raw) {
   try {
     let cleaned = raw.replace(/```json|```/gi, "").trim();
@@ -84,6 +87,7 @@ app.use(
   }),
 );
 app.use("/auth", authRouter);
+app.use("/api/admin", adminRoutes);
 
 const DEFECTDOJO_URL = process.env.DEFECTDOJO_URL;
 const DEFECTDOJO_TOKEN = process.env.DEFECTDOJO_API_KEY;
@@ -91,66 +95,6 @@ const DEFECTDOJO_TOKEN = process.env.DEFECTDOJO_API_KEY;
 const headers = {
   Authorization: `Token ${DEFECTDOJO_TOKEN}`,
 };
-function requireRole(role) {
-  return (req, res, next) => {
-    if (req.user.role !== role) {
-      return res.status(403).json({ error: "Forbidden — admin only" });
-    }
-    next();
-  };
-}
-// REGISTER
-
-// LOGIN
-
-// GOOGLE LOGIN - CALLBACK
-
-// LIST ALL USERS
-app.get(
-  "/api/admin/users",
-  authMiddleware,
-  requireRole("admin"),
-  async (req, res) => {
-    const { rows } = await pool.query(
-      `SELECT id, email, role, created_at FROM users ORDER BY created_at DESC`,
-    );
-    res.json(rows);
-  },
-);
-
-// CHANGE USER ROLE
-app.patch(
-  "/api/admin/users/:id/role",
-  authMiddleware,
-  requireRole("admin"),
-  async (req, res) => {
-    const { role } = req.body;
-    if (!["admin", "developer"].includes(role)) {
-      return res.status(400).json({ error: "Invalid role" });
-    }
-    const { rows } = await pool.query(
-      `UPDATE users SET role = $1 WHERE id = $2 RETURNING id, email, role`,
-      [role, req.params.id],
-    );
-    res.json(rows[0]);
-  },
-);
-
-// DELETE USER
-app.delete(
-  "/api/admin/users/:id",
-  authMiddleware,
-  requireRole("admin"),
-  async (req, res) => {
-    try {
-      await pool.query(`DELETE FROM users WHERE id = $1`, [req.params.id]);
-      res.json({ success: true });
-    } catch (e) {
-      res.status(500).json({ error: "Delete user failed" });
-    }
-  },
-);
-// LOGOUT
 
 ///////////////////////////////////////////////////////
 // FUNCTION: FETCH ALL PAGES FROM DEFECTDOJO API
