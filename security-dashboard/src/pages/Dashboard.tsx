@@ -26,7 +26,6 @@ export default function Dashboard() {
   const [showUserManager, setShowUserManager] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
-  const [adaptiveStats, setAdaptiveStats] = useState<any>(null);
 
   const handleLogout = async () => {
     try {
@@ -211,13 +210,6 @@ export default function Dashboard() {
       setSavingFeedbackId(null);
     }
   };
-  const loadAdaptiveStats = async (repoId: number) => {
-    const res = await api.get(
-      `/api/repositories/${repoId}/adaptive-ranking-stats`,
-    );
-    setAdaptiveStats(res.data);
-    return res.data;
-  };
 
   const loadAiRanking = async (repoId: number) => {
     const res = await api.get(`/api/repositories/${repoId}/ai-rank-findings`);
@@ -361,7 +353,6 @@ export default function Dashboard() {
 
       setFeedbackMessage("Developer order saved successfully.");
       await loadAiRanking(selectedRepo.id);
-      await loadAdaptiveStats(selectedRepo.id);
     } catch (e) {
       console.error(e);
       setFeedbackMessage("Failed to save developer order.");
@@ -572,7 +563,6 @@ export default function Dashboard() {
                 setAiMessage("");
                 setRankingTab("zap");
                 loadAiRanking(repo.id);
-                loadAdaptiveStats(repo.id);
               }}
               onDelete={deleteRepo}
             />
@@ -664,7 +654,6 @@ export default function Dashboard() {
                       );
 
                       const items = await loadAiRanking(selectedRepo.id);
-                      await loadAdaptiveStats(selectedRepo.id);
 
                       setFeedbackMessage(
                         `AI ranking completed. ${run.data.count || items.length} findings ranked.`,
@@ -861,68 +850,7 @@ export default function Dashboard() {
                         </div>
                       )}
                     </div>
-                    {adaptiveStats && (
-                      <div className="bg-slate-900/80 border border-violet-500/30 rounded-xl px-4 py-3 mb-4">
-                        <div className="text-xs font-bold text-violet-300 mb-2">
-                          🧠 Adaptive Ranking Memory
-                        </div>
 
-                        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-                          <div className="bg-slate-800 border border-slate-700 rounded-lg p-2 text-center">
-                            <div className="text-lg font-black text-teal-400">
-                              {adaptiveStats.trivy?.feedback_examples || 0}
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              Trivy examples
-                            </div>
-                          </div>
-
-                          <div className="bg-slate-800 border border-slate-700 rounded-lg p-2 text-center">
-                            <div className="text-lg font-black text-orange-400">
-                              {adaptiveStats.owasp?.feedback_examples || 0}
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              OWASP examples
-                            </div>
-                          </div>
-
-                          <div className="bg-slate-800 border border-slate-700 rounded-lg p-2 text-center">
-                            <div className="text-lg font-black text-emerald-400">
-                              {Number(adaptiveStats.trivy?.promoted || 0) +
-                                Number(adaptiveStats.owasp?.promoted || 0)}
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              Promoted
-                            </div>
-                          </div>
-
-                          <div className="bg-slate-800 border border-slate-700 rounded-lg p-2 text-center">
-                            <div className="text-lg font-black text-red-400">
-                              {Number(adaptiveStats.trivy?.demoted || 0) +
-                                Number(adaptiveStats.owasp?.demoted || 0)}
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              Demoted
-                            </div>
-                          </div>
-
-                          <div className="bg-slate-800 border border-slate-700 rounded-lg p-2 text-center">
-                            <div className="text-lg font-black text-blue-400">
-                              {Number(adaptiveStats.trivy?.accepted || 0) +
-                                Number(adaptiveStats.owasp?.accepted || 0)}
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              Accepted
-                            </div>
-                          </div>
-                        </div>
-
-                        <p className="text-xs text-slate-500 mt-3">
-                          Vertex AI uses these scanner-specific feedback
-                          examples from Trivy and OWASP datasets during ranking.
-                        </p>
-                      </div>
-                    )}
                     {/* Tabs ZAP / Trivy */}
                     <div className="flex gap-2 mb-4">
                       {(["zap", "trivy"] as const).map((tab) => {
