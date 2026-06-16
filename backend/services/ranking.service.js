@@ -133,21 +133,69 @@ async function rankBatch(product, findings, scannerType) {
       datasetExamples,
     );
 
-    const { raw } = await callGemini(prompt);
-    const parsed = safeParseJSON(raw);
+    let parsed = { ordered_items: [] };
+
+    try {
+      const { raw } = await callGemini(prompt);
+      parsed = safeParseJSON(raw);
+    } catch (error) {
+      console.error("AI ranking batch failed:", error.message);
+    }
 
     const batchRanking = Array.isArray(parsed.ordered_items)
       ? parsed.ordered_items
       : [];
 
-    allRanking.push(...batchRanking);
+    const rankedIds = new Set(
+      batchRanking.map((item) => Number(item.finding_id)),
+    );
+
+    const missingItems = batch
+      .filter((finding) => !rankedIds.has(Number(finding.id)))
+      .map((finding) => ({
+        finding_id: finding.id,
+        rank: 9999,
+        priority_label: finding.severity || "Low",
+        reason: "Fallback ranking because AI did not return this finding.",
+      }));
+
+    const enrichedRanking = [...batchRanking, ...missingItems].map((item) => {
+      const original = batch.find(
+        (f) => Number(f.id) === Number(item.finding_id),
+      );
+
+      return {
+        ...item,
+
+        cve_id: original?.cve_id || "",
+        package_name: original?.package_name || "",
+        installed_version: original?.installed_version || "",
+        fixed_version: original?.fixed_version || "",
+        epss_score: original?.epss_score || 0,
+        epss_percentile: original?.epss_percentile || 0,
+        is_kev: original?.is_kev || false,
+
+        url: original?.url || "",
+        method: original?.method || "",
+        parameter: original?.parameter || "",
+        attack: original?.attack || "",
+        evidence: original?.evidence || "",
+        cwe: original?.cwe || "",
+        plugin_id: original?.plugin_id || "",
+        owasp_category: original?.owasp_category || "",
+      };
+    });
+
+    allRanking.push(...enrichedRanking);
   }
 
-  return allRanking.map((item, index) => ({
-    ...item,
-    rank: index + 1,
-    scanner_type: scannerType,
-  }));
+  return allRanking
+    .sort((a, b) => Number(a.rank || 9999) - Number(b.rank || 9999))
+    .map((item, index) => ({
+      ...item,
+      rank: index + 1,
+      scanner_type: scannerType,
+    }));
 }
 
 function buildRankPrompt(
@@ -274,6 +322,24 @@ Rules:
 - Consider previous developer corrections when available.
 - Use scanner-specific dataset examples when available.
 - Dataset examples are more important than generic rules when they show repeated developer preferences.
+
+For Trivy findings, prioritize using:
+- scanner severity
+- CVE identifier
+- CISA KEV status
+- EPSS score and percentile
+- fixed version availability
+- affected package context
+- previous developer feedback
+
+For ZAP findings, prioritize using:
+- scanner severity
+- sensitive URL such as admin, login, auth, payment, API
+- evidence presence
+- attack payload presence
+- CWE and OWASP category
+- previous developer feedback
+- missing security headers are usually lower priority unless strong evidence exists
 
 Product: ${product.name}
 

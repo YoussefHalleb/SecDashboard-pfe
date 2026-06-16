@@ -28,7 +28,11 @@ async function getDatasetRankFindings(req, res) {
 
 async function runAiRanking(req, res) {
   try {
-    const productId = req.params.id;
+    const productId = Number(req.params.id);
+
+    if (!Number.isInteger(productId)) {
+      return res.status(400).json({ error: "Invalid product id" });
+    }
 
     const product = await rankingRepository.findProductById(productId);
 
@@ -37,6 +41,14 @@ async function runAiRanking(req, res) {
     }
 
     const rows = await rankingRepository.findFindingsByProductId(productId);
+
+    if (!rows.length) {
+      return res.json({
+        success: true,
+        message: "No findings to rank",
+        count: 0,
+      });
+    }
 
     const severityOrder = {
       Critical: 1,
@@ -58,53 +70,45 @@ async function runAiRanking(req, res) {
       })
       .slice(0, 100);
 
-    res.json({
-      success: true,
-      message: "AI ranking started",
-      count: findings.length,
-    });
+    const aiRanking = await rankingService.rankFindingsWithVertex(
+      product,
+      findings,
+    );
 
-    setImmediate(async () => {
-      try {
-        const aiRanking = await rankingService.rankFindingsWithVertex(
-          product,
-          findings,
+    for (const item of aiRanking) {
+      const originalFinding = findings.find(
+        (f) => Number(f.id) === Number(item.finding_id),
+      );
+
+      if (!originalFinding) continue;
+
+      await rankingRepository.saveAiRanking(productId, item);
+
+      if (item.scanner_type === "trivy") {
+        await rankingRepository.saveTrivyDataset(
+          productId,
+          originalFinding,
+          item,
         );
-
-        for (const item of aiRanking) {
-          const originalFinding = findings.find(
-            (f) => Number(f.id) === Number(item.finding_id),
-          );
-
-          if (!originalFinding) continue;
-
-          await rankingRepository.saveAiRanking(productId, item);
-
-          if (item.scanner_type === "trivy") {
-            await rankingRepository.saveTrivyDataset(
-              productId,
-              originalFinding,
-              item,
-            );
-          }
-
-          if (item.scanner_type === "zap") {
-            await rankingRepository.saveOwaspDataset(
-              productId,
-              originalFinding,
-              item,
-            );
-          }
-        }
-
-        console.log("AI ranking saved for product", productId);
-      } catch (e) {
-        console.error("Background AI ranking failed:", e.message);
       }
+
+      if (item.scanner_type === "zap") {
+        await rankingRepository.saveOwaspDataset(
+          productId,
+          originalFinding,
+          item,
+        );
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: "AI ranking completed",
+      count: aiRanking.length,
     });
   } catch (error) {
     console.error("AI rank run error:", error.message);
-    res.status(500).json({ error: "Failed to start AI ranking" });
+    res.status(500).json({ error: "Failed to run AI ranking" });
   }
 }
 

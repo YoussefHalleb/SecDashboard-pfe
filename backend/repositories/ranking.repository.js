@@ -282,14 +282,16 @@ async function saveTrivyDataset(productId, finding, rankingItem) {
       finding.severity || "",
       finding.scanner || "Trivy",
 
-      extractCveId(finding.title || ""),
-      extractPackageFromTitle(finding.title || ""),
-      extractInstalledVersion(finding.title || ""),
-      extractFixedVersion(finding.description || ""),
+      rankingItem.cve_id || extractCveId(finding.title || ""),
+      rankingItem.package_name || extractPackageFromTitle(finding.title || ""),
+      rankingItem.installed_version ||
+        extractInstalledVersion(finding.title || ""),
+      rankingItem.fixed_version ||
+        extractFixedVersion(finding.description || ""),
 
-      Number(finding.epss_score || 0),
-      Number(finding.epss_percentile || 0),
-      Boolean(finding.is_kev || false),
+      Number(rankingItem.epss_score || 0),
+      Number(rankingItem.epss_percentile || 0),
+      Boolean(rankingItem.is_kev || false),
 
       Number(rankingItem.rank),
       rankingItem.priority_label || "Low",
