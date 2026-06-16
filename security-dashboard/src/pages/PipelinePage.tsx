@@ -50,7 +50,7 @@ export default function PipelinePage({ onFinish }: Props) {
     <div className="w-full bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 rounded-2xl p-6 border border-slate-700/50 shadow-xl">
       {/* Header */}
       <div className="flex items-center gap-3 mb-5">
-        <div className="w-8 h-8 rounded-lg bg-red-500/20 border border-red-500/40 flex items-center justify-center text-base">
+        <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-base">
           ⚡
         </div>
         <div>
@@ -62,8 +62,8 @@ export default function PipelinePage({ onFinish }: Props) {
 
         {/* Status dots */}
         <div className="ml-auto flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
-          <span className="text-red-400 text-xs font-mono">READY</span>
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="text-emerald-400 text-xs font-mono">READY</span>
         </div>
       </div>
 
