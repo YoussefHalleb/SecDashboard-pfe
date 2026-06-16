@@ -135,6 +135,18 @@ export default function Dashboard() {
     if (value.includes("trivy")) return "trivy";
     return "unknown";
   };
+  const severityWeight = (severity: string) => {
+    const order: Record<string, number> = {
+      Critical: 1,
+      High: 2,
+      Medium: 3,
+      Low: 4,
+      Informational: 5,
+      Info: 5,
+    };
+
+    return order[severity] || 99;
+  };
 
   const reject = async (recId: string) => {
     try {
@@ -206,54 +218,147 @@ export default function Dashboard() {
     setAdaptiveStats(res.data);
     return res.data;
   };
+
   const loadAiRanking = async (repoId: number) => {
-    const res = await api.get(
-      `/api/repositories/${repoId}/dataset-rank-findings`,
-    );
+    const res = await api.get(`/api/repositories/${repoId}/ai-rank-findings`);
+
     const items = res.data.items || [];
-    setAiRankedFindings(items);
-    return items;
+
+    const sorted = [...items].sort((a, b) => {
+      const rankA = Number(a.developer_rank || a.ai_rank || 9999);
+      const rankB = Number(b.developer_rank || b.ai_rank || 9999);
+
+      if (rankA !== rankB) return rankA - rankB;
+
+      return severityWeight(a.severity) - severityWeight(b.severity);
+    });
+
+    setAiRankedFindings(sorted);
+    return sorted;
   };
 
   const loadDeveloperRanking = async (repoId: number) => {
     const res = await api.get(
       `/api/repositories/${repoId}/developer-rank-feedback`,
     );
-    const items = res.data.items || [];
-    setAiRankedFindings(items);
+
+    const feedbackItems = res.data.items || [];
+
+    const feedbackMap = new Map(
+      feedbackItems.map((f: any) => [
+        Number(f.id),
+        {
+          developer_rank: f.developer_rank,
+          developer_reason: f.developer_reason,
+          developer_email: f.developer_email,
+        },
+      ]),
+    );
+
+    setAiRankedFindings((prev) =>
+      prev
+        .map((item) => ({
+          ...item,
+          ...(feedbackMap.get(Number(item.id)) || {}),
+        }))
+        .sort((a, b) => {
+          const rankA = Number(a.developer_rank || a.ai_rank || 9999);
+          const rankB = Number(b.developer_rank || b.ai_rank || 9999);
+
+          if (rankA !== rankB) return rankA - rankB;
+
+          return severityWeight(a.severity) - severityWeight(b.severity);
+        }),
+    );
+
     const reasons: Record<number, string> = {};
-    items.forEach((f: any) => {
+
+    feedbackItems.forEach((f: any) => {
       if (f.developer_reason) reasons[f.id] = f.developer_reason;
     });
+
     setRankingReasons(reasons);
     setFeedbackMessage("Developer order loaded.");
   };
 
-  const moveFinding = (index: number, direction: "up" | "down") => {
+  const moveFindingInTab = (
+    findingId: number,
+    direction: "up" | "down",
+    scannerType: "zap" | "trivy",
+  ) => {
     setAiRankedFindings((prev) => {
-      const items = [...prev];
-      const targetIndex = direction === "up" ? index - 1 : index + 1;
-      if (targetIndex < 0 || targetIndex >= items.length) return prev;
-      [items[index], items[targetIndex]] = [items[targetIndex], items[index]];
-      return items.map((item, i) => ({ ...item, developer_rank: i + 1 }));
+      const sameTab = prev.filter(
+        (item) => normalizeScannerType(item) === scannerType,
+      );
+
+      const currentIndex = sameTab.findIndex(
+        (item) => Number(item.id) === Number(findingId),
+      );
+
+      const targetIndex =
+        direction === "up" ? currentIndex - 1 : currentIndex + 1;
+
+      if (
+        currentIndex < 0 ||
+        targetIndex < 0 ||
+        targetIndex >= sameTab.length
+      ) {
+        return prev;
+      }
+
+      const reorderedTab = [...sameTab];
+
+      [reorderedTab[currentIndex], reorderedTab[targetIndex]] = [
+        reorderedTab[targetIndex],
+        reorderedTab[currentIndex],
+      ];
+
+      const rankMap = new Map(
+        reorderedTab.map((item, index) => [
+          Number(item.id),
+          {
+            ...item,
+            developer_rank: index + 1,
+          },
+        ]),
+      );
+
+      return prev.map((item) => rankMap.get(Number(item.id)) || item);
     });
   };
 
   const saveDeveloperOrder = async () => {
     if (!selectedRepo) return;
+
     try {
+      const normalizedItems = aiRankedFindings.map((f) => {
+        const scannerType = normalizeScannerType(f);
+
+        const sameScannerItems = aiRankedFindings.filter(
+          (item) => normalizeScannerType(item) === scannerType,
+        );
+
+        const rankInScanner =
+          sameScannerItems.findIndex(
+            (item) => Number(item.id) === Number(f.id),
+          ) + 1;
+
+        return {
+          finding_id: f.id,
+          ai_rank: f.ai_rank,
+          developer_rank: f.developer_rank || rankInScanner,
+          ai_priority_label: f.ai_priority_label,
+          developer_reason: rankingReasons[f.id] || "",
+        };
+      });
+
       await api.post(
         `/api/repositories/${selectedRepo.id}/developer-rank-feedback`,
         {
-          items: aiRankedFindings.map((f, index) => ({
-            finding_id: f.id,
-            ai_rank: f.ai_rank,
-            developer_rank: f.developer_rank || index + 1,
-            ai_priority_label: f.ai_priority_label,
-            developer_reason: rankingReasons[f.id] || "",
-          })),
+          items: normalizedItems,
         },
       );
+
       setFeedbackMessage("Developer order saved successfully.");
       await loadAiRanking(selectedRepo.id);
       await loadAdaptiveStats(selectedRepo.id);
@@ -549,26 +654,25 @@ export default function Dashboard() {
                 <button
                   onClick={async () => {
                     if (!selectedRepo || loadingRankRun) return;
+
                     setLoadingRankRun(true);
+                    setFeedbackMessage("");
+
                     try {
-                      await api.post(
+                      const run = await api.post(
                         `/api/repositories/${selectedRepo.id}/ai-rank-run`,
                       );
-                      const poll = setInterval(async () => {
-                        const items = await loadAiRanking(selectedRepo.id);
-                        await loadAdaptiveStats(selectedRepo.id);
 
-                        if (items.length > 0) {
-                          clearInterval(poll);
-                          setLoadingRankRun(false);
-                        }
-                      }, 3000);
-                      setTimeout(() => {
-                        clearInterval(poll);
-                        setLoadingRankRun(false);
-                      }, 60000);
+                      const items = await loadAiRanking(selectedRepo.id);
+                      await loadAdaptiveStats(selectedRepo.id);
+
+                      setFeedbackMessage(
+                        `AI ranking completed. ${run.data.count || items.length} findings ranked.`,
+                      );
                     } catch (e) {
                       console.error(e);
+                      setFeedbackMessage("Failed to run AI ranking.");
+                    } finally {
                       setLoadingRankRun(false);
                     }
                   }}
@@ -633,7 +737,7 @@ export default function Dashboard() {
                     <div className="flex items-center justify-between mb-3">
                       <div>
                         <h3 className="text-sm font-bold text-emerald-400">
-                          🤖 Dataset-based Vertex AI Ranking
+                          🤖 Trivy and ZAP ranked separately by the AI.
                         </h3>
                         <p className="text-xs text-slate-500 mt-1">
                           Trivy and ZAP ranked separately by the AI.
@@ -851,7 +955,6 @@ export default function Dashboard() {
                       {aiRankedFindings
                         .filter((f) => normalizeScannerType(f) === rankingTab)
                         .map((f, index) => {
-                          const globalIndex = aiRankedFindings.indexOf(f);
                           const filteredLength = aiRankedFindings.filter(
                             (x) => normalizeScannerType(x) === rankingTab,
                           ).length;
@@ -869,7 +972,7 @@ export default function Dashboard() {
                                         : "bg-teal-500/10 border-teal-500/30 text-teal-400"
                                     }`}
                                   >
-                                    {index + 1}
+                                    {f.developer_rank || f.ai_rank || index + 1}
                                   </div>
                                   <div className="min-w-0">
                                     <div className="text-sm font-semibold text-white truncate">
@@ -896,7 +999,7 @@ export default function Dashboard() {
                                   </span>
                                   <button
                                     onClick={() =>
-                                      moveFinding(globalIndex, "up")
+                                      moveFindingInTab(f.id, "up", rankingTab)
                                     }
                                     disabled={index === 0}
                                     className="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 disabled:opacity-30 text-slate-300 px-2 py-1 rounded-lg transition"
@@ -905,7 +1008,7 @@ export default function Dashboard() {
                                   </button>
                                   <button
                                     onClick={() =>
-                                      moveFinding(globalIndex, "down")
+                                      moveFindingInTab(f.id, "down", rankingTab)
                                     }
                                     disabled={index === filteredLength - 1}
                                     className="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 disabled:opacity-30 text-slate-300 px-2 py-1 rounded-lg transition"
