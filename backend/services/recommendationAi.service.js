@@ -1,11 +1,76 @@
 const path = require("path");
-const { callGeminiWithGrounding } = require("../vertexClient");
+const { callGeminiWithGrounding, callGemini } = require("../vertexClient");
 const { parseZapHtmlFile } = require("../zapParser");
 const safeParseJSON = require("../utils/safeParseJSON");
 const recommendationRepository = require("../repositories/recommendation.repository");
 
+function resolveZapPath(zapPath) {
+  if (!zapPath) return null;
+
+  if (path.isAbsolute(zapPath)) {
+    return zapPath;
+  }
+
+  return path.resolve(__dirname, "..", zapPath);
+}
+
+function normalizeText(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
+}
+
+async function callAiWithFallback(prompt) {
+  try {
+    const result = await callGeminiWithGrounding(prompt);
+
+    if (result?.raw && result.raw.trim()) {
+      return {
+        raw: result.raw,
+        ai_source: "gemini_grounding",
+      };
+    }
+
+    console.warn("Gemini with grounding returned empty response");
+  } catch (error) {
+    console.error(
+      "Gemini with grounding failed:",
+      error.response?.data || error.message,
+    );
+  }
+
+  try {
+    const result = await callGemini(prompt);
+
+    if (result?.raw && result.raw.trim()) {
+      return {
+        raw: result.raw,
+        ai_source: "gemini_simple",
+      };
+    }
+
+    console.warn("Gemini simple returned empty response");
+  } catch (error) {
+    console.error(
+      "Gemini simple failed:",
+      error.response?.data || error.message,
+    );
+  }
+
+  return {
+    raw: null,
+    ai_source: "failed",
+    error:
+      "Both Gemini with grounding and Gemini simple failed or returned empty response",
+  };
+}
+
 async function generateRecommendations({ product, vulnerabilities }) {
-  if (!vulnerabilities?.length) {
+  if (!product || typeof product !== "string") {
+    throw new Error("product is required");
+  }
+
+  if (!Array.isArray(vulnerabilities) || vulnerabilities.length === 0) {
     return {
       items: [],
       source: "empty",
@@ -14,25 +79,39 @@ async function generateRecommendations({ product, vulnerabilities }) {
 
   const MAX_ITEMS = 5;
   const selected = vulnerabilities.slice(0, MAX_ITEMS);
-  const findingIds = selected.map((v) => v.id);
+
+  const findingIds = selected
+    .map((v) => Number(v.id))
+    .filter((id) => Number.isInteger(id));
+
+  if (findingIds.length === 0) {
+    return {
+      items: [],
+      source: "invalid_findings",
+    };
+  }
 
   const existing =
     await recommendationRepository.findProposedByFindingIds(findingIds);
 
-  if (existing.length > 0) {
-    const items = existing.map((row) => {
-      const vuln = selected.find(
-        (v) => Number(v.id) === Number(row.finding_id),
-      );
+  const existingFindingIds = new Set(
+    existing.map((row) => Number(row.finding_id)),
+  );
 
-      return {
-        ...row,
-        title: vuln?.title || "Vulnerability",
-      };
-    });
+  const existingItems = existing.map((row) => {
+    const vuln = selected.find((v) => Number(v.id) === Number(row.finding_id));
 
     return {
-      items,
+      ...row,
+      title: vuln?.title || "Vulnerability",
+    };
+  });
+
+  const missing = selected.filter((v) => !existingFindingIds.has(Number(v.id)));
+
+  if (missing.length === 0) {
+    return {
+      items: existingItems,
       source: "database",
     };
   }
@@ -43,32 +122,44 @@ async function generateRecommendations({ product, vulnerabilities }) {
   const zapMap = new Map();
 
   if (zapPath) {
-    const fullPath = path.resolve(__dirname, "..", zapPath);
+    const fullPath = resolveZapPath(zapPath);
     const zapFindings = parseZapHtmlFile(fullPath);
-    zapFindings.forEach((z) => zapMap.set(z.title?.trim(), z));
+
+    for (const z of zapFindings) {
+      const key = normalizeText(z.title);
+      if (!key) continue;
+
+      if (!zapMap.has(key)) {
+        zapMap.set(key, []);
+      }
+
+      zapMap.get(key).push(z);
+    }
   }
 
-  const summary = selected.map((v) => {
-    const zap = zapMap.get(v.title?.trim()) || {};
+  const summary = missing.map((v) => {
+    const matches = zapMap.get(normalizeText(v.title)) || [];
+    const zap = matches[0] || {};
 
     return {
-      finding_id: v.id,
+      finding_id: Number(v.id),
       title: v.title,
       severity: v.severity,
       scanner: v.scanner,
       description: v.description || zap.description || "",
-      url: zap.url || "",
-      method: zap.method || "",
-      parameter: zap.parameter || "",
-      attack: zap.attack || "",
-      evidence: zap.evidence || "",
-      solution: zap.solution || "",
-      reference: zap.reference || "",
-      cwe: zap.cwe || "",
+      url: v.url || zap.url || "",
+      method: v.method || zap.method || "",
+      parameter: v.parameter || zap.parameter || "",
+      attack: v.attack || zap.attack || "",
+      evidence: v.evidence || zap.evidence || "",
+      solution: v.solution || zap.solution || "",
+      reference: v.reference || zap.reference || "",
+      cwe: v.cwe || zap.cwe || "",
     };
   });
 
-  const allRaws = [];
+  const parsed = { items: [] };
+  let parseErrors = 0;
 
   for (const vuln of summary) {
     const prompt = `
@@ -125,20 +216,40 @@ ${JSON.stringify([vuln], null, 2)}
 
     console.log(`🔎 Analyzing vuln #${vuln.finding_id}: ${vuln.title}`);
 
-    const { raw } = await callGeminiWithGrounding(prompt);
-    allRaws.push(raw);
+    const aiResult = await callAiWithFallback(prompt);
+
+    if (!aiResult.raw) {
+      parseErrors += 1;
+      console.error(
+        `❌ No AI response for finding #${vuln.finding_id}:`,
+        aiResult.error,
+      );
+      continue;
+    }
+
+    const p = safeParseJSON(aiResult.raw);
+
+    if (Array.isArray(p?.items) && p.items.length > 0) {
+      parsed.items.push(...p.items);
+      console.log(
+        `✅ AI response for finding #${vuln.finding_id} from ${aiResult.ai_source}`,
+      );
+    } else {
+      parseErrors += 1;
+      console.error(`❌ Invalid AI JSON for finding #${vuln.finding_id}`);
+    }
 
     console.log(`✅ Done vuln #${vuln.finding_id}`);
   }
 
-  const parsed = { items: [] };
-
-  for (const raw of allRaws) {
-    const p = safeParseJSON(raw);
-
-    if (p?.items) {
-      parsed.items.push(...p.items);
-    }
+  if (parsed.items.length === 0) {
+    return {
+      items: existingItems,
+      source: existingItems.length
+        ? "partial_database_ai_failed"
+        : "ai_parse_failed",
+      parse_errors: parseErrors,
+    };
   }
 
   const saved = [];
@@ -156,8 +267,8 @@ ${JSON.stringify([vuln], null, 2)}
   }
 
   return {
-    items: saved,
-    source: "generated",
+    items: [...existingItems, ...saved],
+    source: existingItems.length ? "database_and_generated" : "generated",
   };
 }
 

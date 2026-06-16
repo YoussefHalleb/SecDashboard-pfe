@@ -1,6 +1,10 @@
 const pool = require("../db");
 
 async function findProposedByFindingIds(findingIds) {
+  if (!Array.isArray(findingIds) || findingIds.length === 0) {
+    return [];
+  }
+
   const { rows } = await pool.query(
     `
     SELECT
@@ -32,6 +36,8 @@ async function findProposedByFindingIds(findingIds) {
 }
 
 async function findZapReportPathByProductName(productName) {
+  if (!productName) return null;
+
   const { rows } = await pool.query(
     `SELECT zap_report_path FROM products WHERE name = $1`,
     [productName],
@@ -42,13 +48,13 @@ async function findZapReportPathByProductName(productName) {
 
 async function upsertGeneratedRecommendation(item) {
   const content = `
-**Exploit Scenario:** ${item.exploit_scenario || ""}
+**Exploit Scenario:** ${item.exploit_scenario ?? ""}
 
-**Impact:** ${item.impact || ""}
+**Impact:** ${item.impact ?? ""}
 
-**Remediation:** ${item.remediation || ""}
+**Remediation:** ${item.remediation ?? ""}
 
-**OWASP:** ${item.owasp_category || ""}
+**OWASP:** ${item.owasp_category ?? ""}
   `.trim();
 
   const { rows } = await pool.query(
@@ -70,7 +76,7 @@ async function upsertGeneratedRecommendation(item) {
       code_fix_example
     )
     VALUES ($1,$2,'proposed',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-    ON CONFLICT ON CONSTRAINT unique_proposed_per_finding
+    ON CONFLICT (finding_id) WHERE status = 'proposed'
     DO UPDATE SET
       content = EXCLUDED.content,
       code_fix_example = EXCLUDED.code_fix_example,
@@ -83,23 +89,24 @@ async function upsertGeneratedRecommendation(item) {
       attack_complexity = EXCLUDED.attack_complexity,
       privileges_required = EXCLUDED.privileges_required,
       user_interaction = EXCLUDED.user_interaction,
-      owasp_category = EXCLUDED.owasp_category
+      owasp_category = EXCLUDED.owasp_category,
+      updated_at = now()
     RETURNING *
     `,
     [
       item.finding_id,
       content,
-      item.cvss_score || null,
-      item.cvss_vector || null,
-      item.ai_risk_score || null,
-      item.confidence || null,
-      item.false_positive_likelihood || null,
-      item.priority || null,
-      item.attack_complexity || null,
-      item.privileges_required || null,
-      item.user_interaction || null,
-      item.owasp_category || null,
-      item.code_fix_example || null,
+      item.cvss_score ?? null,
+      item.cvss_vector ?? null,
+      item.ai_risk_score ?? null,
+      item.confidence ?? null,
+      item.false_positive_likelihood ?? null,
+      item.priority ?? null,
+      item.attack_complexity ?? null,
+      item.privileges_required ?? null,
+      item.user_interaction ?? null,
+      item.owasp_category ?? null,
+      item.code_fix_example ?? null,
     ],
   );
 
