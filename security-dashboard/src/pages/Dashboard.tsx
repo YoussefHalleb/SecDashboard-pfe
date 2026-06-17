@@ -4,9 +4,12 @@ import { api, logout } from "../services/api";
 import PipelinePage from "./PipelinePage";
 import type { Repository, Recommendation } from "../types/dashboard";
 import SeverityBadge from "../components/dashboard/SeverityBadge";
-import RepositoryCard from "../components/dashboard/RepositoryCard";
 import UserManagerModal from "../components/dashboard/UserManagerModal";
 import DashboardHeader from "../components/dashboard/DashboardHeader";
+import RepositoryGrid from "../components/dashboard/RepositoryGrid";
+import { repositoryService } from "../services/repositoryService";
+import { rankingService } from "../services/rankingService";
+
 export default function Dashboard() {
   const [selectedRepo, setSelectedRepo] = useState<Repository | null>(null);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
@@ -48,10 +51,7 @@ export default function Dashboard() {
 
   const { data = [], isLoading } = useQuery({
     queryKey: ["repositories"],
-    queryFn: async () => {
-      const res = await api.get("/api/repositories");
-      return res.data;
-    },
+    queryFn: repositoryService.getAll,
   });
 
   const approve = async (recId: string) => {
@@ -212,9 +212,7 @@ export default function Dashboard() {
   };
 
   const loadAiRanking = async (repoId: number) => {
-    const res = await api.get(`/api/repositories/${repoId}/ai-rank-findings`);
-
-    const items = res.data.items || [];
+    const items = await rankingService.getAiRanking(repoId);
 
     const sorted = [...items].sort((a, b) => {
       const rankA = Number(a.developer_rank || a.ai_rank || 9999);
@@ -230,11 +228,7 @@ export default function Dashboard() {
   };
 
   const loadDeveloperRanking = async (repoId: number) => {
-    const res = await api.get(
-      `/api/repositories/${repoId}/developer-rank-feedback`,
-    );
-
-    const feedbackItems = res.data.items || [];
+    const feedbackItems = await rankingService.getDeveloperRanking(repoId);
 
     const feedbackMap = new Map(
       feedbackItems.map((f: any) => [
@@ -344,11 +338,9 @@ export default function Dashboard() {
         };
       });
 
-      await api.post(
-        `/api/repositories/${selectedRepo.id}/developer-rank-feedback`,
-        {
-          items: normalizedItems,
-        },
+      await rankingService.saveDeveloperRanking(
+        selectedRepo.id,
+        normalizedItems,
       );
 
       setFeedbackMessage("Developer order saved successfully.");
@@ -396,8 +388,9 @@ export default function Dashboard() {
 
   const deleteRepo = async (repoId: number) => {
     if (!confirm("Supprimer ce repository et toutes ses données ?")) return;
+
     try {
-      await api.delete(`/api/products/${repoId}`);
+      await repositoryService.delete(repoId);
       window.location.reload();
     } catch (e) {
       console.error(e);
@@ -509,33 +502,20 @@ export default function Dashboard() {
       <div className="relative z-10 max-w-7xl mx-auto px-6 py-8 space-y-8">
         <PipelinePage onFinish={() => {}} />
 
-        <div className="flex items-center gap-3">
-          <h2 className="text-lg font-bold text-white">Repositories</h2>
-          <span className="bg-slate-900 border border-slate-800 text-slate-500 text-xs font-mono px-2 py-0.5 rounded-full">
-            {data.length}
-          </span>
-        </div>
-
-        {/* ── Repository Cards ── */}
-        <div className="grid md:grid-cols-2 gap-6">
-          {data.map((repo: Repository) => (
-            <RepositoryCard
-              key={repo.id}
-              repo={repo}
-              onViewDetails={(repo) => {
-                setSelectedRepo(repo);
-                setRecommendations([]);
-                setPrioritizedFindings([]);
-                setAiRankedFindings([]);
-                setRankingReasons({});
-                setAiMessage("");
-                setRankingTab("zap");
-                loadAiRanking(repo.id);
-              }}
-              onDelete={deleteRepo}
-            />
-          ))}
-        </div>
+        <RepositoryGrid
+          repositories={data}
+          onViewDetails={(repo) => {
+            setSelectedRepo(repo);
+            setRecommendations([]);
+            setPrioritizedFindings([]);
+            setAiRankedFindings([]);
+            setRankingReasons({});
+            setAiMessage("");
+            setRankingTab("zap");
+            loadAiRanking(repo.id);
+          }}
+          onDelete={deleteRepo}
+        />
       </div>
 
       {/* ── MODAL: Repo Details ── */}
@@ -569,7 +549,7 @@ export default function Dashboard() {
                 <button
                   onClick={() =>
                     window.open(
-                      `/api/products/${selectedRepo.id}/zap-report`,
+                      repositoryService.getZapReportUrl(selectedRepo.id),
                       "_blank",
                     )
                   }
@@ -617,14 +597,14 @@ export default function Dashboard() {
                     setFeedbackMessage("");
 
                     try {
-                      const run = await api.post(
-                        `/api/repositories/${selectedRepo.id}/ai-rank-run`,
+                      const run = await rankingService.runAiRanking(
+                        selectedRepo.id,
                       );
 
                       const items = await loadAiRanking(selectedRepo.id);
 
                       setFeedbackMessage(
-                        `AI ranking completed. ${run.data.count || items.length} findings ranked.`,
+                        `AI ranking completed. ${run.count || items.length} findings ranked.`,
                       );
                     } catch (e) {
                       console.error(e);
