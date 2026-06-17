@@ -232,35 +232,47 @@ export default function Dashboard() {
 
     const feedbackMap = new Map(
       feedbackItems.map((f: any) => [
-        Number(f.id),
+        Number(f.id || f.finding_id),
         {
-          developer_rank: f.developer_rank,
+          developer_rank: Number(f.developer_rank),
           developer_reason: f.developer_reason,
           developer_email: f.developer_email,
         },
       ]),
     );
 
-    setAiRankedFindings((prev) =>
-      prev
-        .map((item) => ({
+    setAiRankedFindings((prev) => {
+      const merged = prev.map((item) => {
+        const feedback = feedbackMap.get(Number(item.id));
+
+        return {
           ...item,
-          ...(feedbackMap.get(Number(item.id)) || {}),
-        }))
-        .sort((a, b) => {
-          const rankA = Number(a.developer_rank || a.ai_rank || 9999);
-          const rankB = Number(b.developer_rank || b.ai_rank || 9999);
+          ...(feedback || {}),
+        };
+      });
 
-          if (rankA !== rankB) return rankA - rankB;
+      return merged.sort((a, b) => {
+        const aHasDev =
+          a.developer_rank !== null && a.developer_rank !== undefined;
+        const bHasDev =
+          b.developer_rank !== null && b.developer_rank !== undefined;
 
-          return severityWeight(a.severity) - severityWeight(b.severity);
-        }),
-    );
+        if (aHasDev && bHasDev) {
+          return Number(a.developer_rank) - Number(b.developer_rank);
+        }
+
+        if (aHasDev) return -1;
+        if (bHasDev) return 1;
+
+        return Number(a.ai_rank || 9999) - Number(b.ai_rank || 9999);
+      });
+    });
 
     const reasons: Record<number, string> = {};
 
     feedbackItems.forEach((f: any) => {
-      if (f.developer_reason) reasons[f.id] = f.developer_reason;
+      const id = Number(f.id || f.finding_id);
+      if (f.developer_reason) reasons[id] = f.developer_reason;
     });
 
     setRankingReasons(reasons);
@@ -317,26 +329,17 @@ export default function Dashboard() {
     if (!selectedRepo) return;
 
     try {
-      const normalizedItems = aiRankedFindings.map((f) => {
-        const scannerType = normalizeScannerType(f);
+      const scannerItems = aiRankedFindings.filter(
+        (item) => normalizeScannerType(item) === rankingTab,
+      );
 
-        const sameScannerItems = aiRankedFindings.filter(
-          (item) => normalizeScannerType(item) === scannerType,
-        );
-
-        const rankInScanner =
-          sameScannerItems.findIndex(
-            (item) => Number(item.id) === Number(f.id),
-          ) + 1;
-
-        return {
-          finding_id: f.id,
-          ai_rank: f.ai_rank,
-          developer_rank: f.developer_rank || rankInScanner,
-          ai_priority_label: f.ai_priority_label,
-          developer_reason: rankingReasons[f.id] || "",
-        };
-      });
+      const normalizedItems = scannerItems.map((f, index) => ({
+        finding_id: f.id,
+        ai_rank: f.ai_rank,
+        developer_rank: index + 1,
+        ai_priority_label: f.ai_priority_label,
+        developer_reason: rankingReasons[f.id] || f.developer_reason || "",
+      }));
 
       await rankingService.saveDeveloperRanking(
         selectedRepo.id,
@@ -344,7 +347,7 @@ export default function Dashboard() {
       );
 
       setFeedbackMessage("Developer order saved successfully.");
-      await loadAiRanking(selectedRepo.id);
+      await loadDeveloperRanking(selectedRepo.id);
     } catch (e) {
       console.error(e);
       setFeedbackMessage("Failed to save developer order.");
