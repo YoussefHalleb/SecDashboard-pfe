@@ -14,7 +14,6 @@ FROM nginx:alpine
 
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Si tu utilises React Router (routes client-side)
 RUN echo 'server { \
   listen 80; \
   location / { \
