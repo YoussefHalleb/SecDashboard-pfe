@@ -1,11 +1,8 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { register } from "../services/api";
 
-type RegisterProps = {
-  onSwitchToLogin: () => void;
-};
-
-export default function Register({ onSwitchToLogin }: RegisterProps) {
+export default function Register() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -54,7 +51,6 @@ export default function Register({ onSwitchToLogin }: RegisterProps) {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-950 relative overflow-hidden">
-
       {/* ── Background layers (same as Login) ── */}
       <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900" />
       <div className="absolute top-1/4 right-1/4 w-96 h-96 bg-violet-500/5 rounded-full blur-3xl" />
@@ -71,12 +67,10 @@ export default function Register({ onSwitchToLogin }: RegisterProps) {
 
       {/* Card */}
       <div className="relative w-full max-w-md mx-4">
-
         {/* Top accent line (same as Login) */}
         <div className="h-[3px] bg-gradient-to-r from-emerald-500 via-blue-500 to-violet-500 rounded-t-2xl" />
 
         <div className="bg-slate-900/95 border border-slate-800 border-t-0 rounded-b-2xl p-8 shadow-2xl backdrop-blur-sm">
-
           {/* Logo */}
           <div className="flex items-center justify-center gap-3 mb-8">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-slate-900 font-black text-lg shadow-lg shadow-emerald-500/20">
@@ -96,7 +90,6 @@ export default function Register({ onSwitchToLogin }: RegisterProps) {
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-
             {/* Email */}
             <div>
               <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
@@ -151,11 +144,15 @@ export default function Register({ onSwitchToLogin }: RegisterProps) {
                       className={`h-full rounded-full transition-all duration-300 ${strength.color} ${strength.width}`}
                     />
                   </div>
-                  <p className={`text-xs mt-1 ${
-                    strength.label === "Faible" ? "text-red-400"
-                    : strength.label === "Moyen" ? "text-yellow-400"
-                    : "text-emerald-400"
-                  }`}>
+                  <p
+                    className={`text-xs mt-1 ${
+                      strength.label === "Faible"
+                        ? "text-red-400"
+                        : strength.label === "Moyen"
+                          ? "text-yellow-400"
+                          : "text-emerald-400"
+                    }`}
+                  >
                     Force : {strength.label}
                   </p>
                 </div>
@@ -216,9 +213,24 @@ export default function Register({ onSwitchToLogin }: RegisterProps) {
             >
               {loading ? (
                 <>
-                  <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                  <svg
+                    className="w-4 h-4 animate-spin"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8v8z"
+                    />
                   </svg>
                   Création...
                 </>
@@ -231,13 +243,12 @@ export default function Register({ onSwitchToLogin }: RegisterProps) {
           {/* Switch to login */}
           <div className="mt-6 pt-5 border-t border-slate-800 text-center">
             <span className="text-slate-500 text-sm">Déjà un compte ? </span>
-            <button
-              type="button"
-              onClick={onSwitchToLogin}
+            <Link
+              to="/login"
               className="text-emerald-400 hover:text-emerald-300 text-sm font-semibold transition"
             >
               Se connecter
-            </button>
+            </Link>
           </div>
         </div>
 

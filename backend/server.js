@@ -22,7 +22,6 @@ function safeParseJSON(raw) {
   try {
     let cleaned = raw.replace(/```json|```/gi, "").trim();
 
-    // accepte soit { ... } soit [ ... ]
     const firstObj = cleaned.indexOf("{");
     const firstArr = cleaned.indexOf("[");
 
@@ -45,7 +44,6 @@ function safeParseJSON(raw) {
 
     const parsed = JSON.parse(cleaned);
 
-    // si Gemini retourne directement un tableau, on le transforme en { items: [...] }
     if (Array.isArray(parsed)) {
       return { items: parsed };
     }
@@ -101,9 +99,6 @@ const headers = {
   Authorization: `Token ${DEFECTDOJO_TOKEN}`,
 };
 
-///////////////////////////////////////////////////////
-// FUNCTION: FETCH ALL PAGES FROM DEFECTDOJO API
-///////////////////////////////////////////////////////
 async function fetchAllPages(url) {
   let results = [];
   let nextUrl = url;
@@ -117,8 +112,6 @@ async function fetchAllPages(url) {
   return results;
 }
 
-// GET ALL REPOSITORIES (Products + ALL Findings)
-// + STORE IN POSTGRESQL
 app.get("/api/repositories", async (req, res) => {
   try {
     // Fetch products
@@ -223,9 +216,6 @@ ON CONFLICT DO NOTHING
   }
 });
 
-///////////////////////////////////////////////////////
-// GET FINDINGS FROM DATABASE (FAST)
-///////////////////////////////////////////////////////
 app.get("/api/findings", async (req, res) => {
   try {
     const result = await pool.query(`
@@ -244,9 +234,6 @@ app.get("/api/findings", async (req, res) => {
   }
 });
 
-///////////////////////////////////////////////////////
-// GET FINDINGS BY PRODUCT ID (FROM DATABASE)
-///////////////////////////////////////////////////////
 app.get("/api/repositories/:id/findings", async (req, res) => {
   try {
     const productId = req.params.id;

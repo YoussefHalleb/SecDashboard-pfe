@@ -1,11 +1,8 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { login, forgotPassword } from "../services/api";
 
-type LoginProps = {
-  onSwitchToRegister: () => void;
-};
-
-export default function Login({ onSwitchToRegister }: LoginProps) {
+export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -242,13 +239,12 @@ export default function Login({ onSwitchToRegister }: LoginProps) {
             <span className="text-slate-500 text-sm">
               Pas encore de compte ?{" "}
             </span>
-            <button
-              type="button"
-              onClick={onSwitchToRegister}
+            <Link
+              to="/register"
               className="text-emerald-400 hover:text-emerald-300 text-sm font-semibold transition"
             >
               S'inscrire
-            </button>
+            </Link>
           </div>
         </div>
 
